@@ -15,6 +15,7 @@ class Action(IntEnum):
 class OfficeEnv(gym.Env):
 
     def __init__(self, size: int = 5):
+        super().__init__()
         self.size = size # 5x5 grid by default
 
         # Initialize positions, will be randmsly set in reset (-1 is unitialized state for now)
@@ -30,3 +31,22 @@ class OfficeEnv(gym.Env):
         )
 
         self.action_space = gym.spaces.Discrete(len(Action))
+
+        self.action_to_direction = {
+            Action.NORTH : np.array([0,-1]),
+            Action.EAST : np.array([1,0]),
+            Action.SOUTH : np.array([0,1]),
+            Action.WEST : np.array([-1,0])
+        }
+
+    # Using this to get environement internal state
+    def _get_obs(self):
+        return {"agent": self._agent_location, "target": self._target_location}
+
+    # Find distance between agent and target
+    def _get_info(self):
+        return {
+            "distance": np.linalg.norm(
+                self._agent_location - self._target_location, ord=1
+            )
+        }
