@@ -34,7 +34,7 @@ class OfficeEnv(gym.Env):
 
         self.action_space = gym.spaces.Discrete(len(Action))
 
-        self.action_to_direction = {
+        self._action_to_direction = {
             Action.NORTH : np.array([0,-1]),
             Action.EAST : np.array([1,0]),
             Action.SOUTH : np.array([0,1]),
@@ -71,3 +71,25 @@ class OfficeEnv(gym.Env):
         info = self._get_info()
 
         return observation, info
+
+    def step(self, action):
+        # Map tthe action element to the direction
+        if action not in self._action_to_direction:
+             direction = 0
+        else:
+            direction = self._action_to_direction[action]
+
+        # use np.clip to stay in grid
+        self._agent_location = np.clip(
+             self._agent_location + direction, 0, self.size - 1
+        )
+
+        # Check if it reached the target
+        terminated = np.array_equal(self._agent_location, self._target_location)
+
+        # Binary sparse reward
+        reward = 1 if terminated else 0
+        observation = self._get_obs()
+        info = self._get_info()
+
+        return observation, reward, terminated, False, info
