@@ -16,6 +16,8 @@ class OfficeEnv(gym.Env):
 
     def __init__(self, size: int = 5):
         super().__init__()
+        if size < 2:
+                    raise ValueError("You cannot have a grid less than 2x2")    
         self.size = size # 5x5 grid by default
 
         # Initialize positions, will be randmsly set in reset (-1 is unitialized state for now)
@@ -50,3 +52,22 @@ class OfficeEnv(gym.Env):
                 self._agent_location - self._target_location, ord=1
             )
         }
+
+    def reset(self, seed=None, options=None):
+        # seed self.np_random
+        super().reset(seed=seed)
+
+        # choose agnet location at random (uniformally)
+        self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+
+        # Sample target location rnadomly until it does not conflict with agent
+        self._target_location = self._agent_location
+        while np.array_equal(self._target_location, self._agent_location):
+            self._target_location = self.np_random.integers(
+                0, self.size, size=2, dtype=int
+            )
+
+        observation = self._get_obs()
+        info = self._get_info()
+
+        return observation, info
