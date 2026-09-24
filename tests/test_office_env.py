@@ -137,3 +137,27 @@ def test_reaching_target_gives_reward_and_terminates_episode():
     assert reward == 1
     assert terminated is True
     assert truncated is False
+
+
+def test_rgb_array_render_uses_xy_coordinates_and_returns_height_width_channels():
+    environment = OfficeEnv(size=5, render_mode="rgb_array", window_size=100)
+    environment._agent_location = np.array([1, 3], dtype=np.int32)
+    environment._target_location = np.array([3, 1], dtype=np.int32)
+
+    frame = environment.render()
+
+    assert frame.shape == (100, 100, 3)
+    assert frame.dtype == np.uint8
+    np.testing.assert_array_equal(frame[30, 70], [255, 0, 0])
+    np.testing.assert_array_equal(frame[70, 30], [0, 0, 255])
+
+
+def test_render_returns_none_when_rendering_is_disabled():
+    environment = OfficeEnv(size=5)
+
+    assert environment.render() is None
+
+
+def test_rejects_unsupported_render_mode():
+    with pytest.raises(ValueError, match="Unsupported render mode"):
+        OfficeEnv(size=5, render_mode="terminal")
