@@ -2,6 +2,7 @@ from enum import IntEnum
 from typing import Optional
 import numpy as np
 import gymnasium as gym
+import pygame
 
 
 class Action(IntEnum):
@@ -13,12 +14,27 @@ class Action(IntEnum):
     WAIT = 5
 
 class OfficeEnv(gym.Env):
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, size: int = 5):
+    def __init__(
+        self,
+        size: int = 5,
+        render_mode: Optional[str] = None,
+        window_size: int = 512,
+    ):
         super().__init__()
         if size < 2:
-                    raise ValueError("You cannot have a grid less than 2x2")    
-        self.size = size # 5x5 grid by default
+            raise ValueError("You cannot have a grid less than 2x2")
+        if render_mode not in (None, *self.metadata["render_modes"]):
+            raise ValueError(f"Unsupported render mode: {render_mode}")
+        if window_size < 1:
+            raise ValueError("window_size must be positive")
+
+        self.size = size
+        self.render_mode = render_mode
+        self.window_size = window_size
+        self.window = None
+        self.clock = None
 
         # Initialize positions, will be randmsly set in reset (-1 is unitialized state for now)
         self._agent_location = np.array([-1,-1], dtype=np.int32)
@@ -70,6 +86,9 @@ class OfficeEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
+        if self.render_mode == "human":
+            self.render()
+
         return observation, info
 
     def step(self, action):
@@ -92,4 +111,96 @@ class OfficeEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
+        if self.render_mode == "human":
+            self.render()
+
         return observation, reward, terminated, False, info
+
+    # Rendering
+    def render(self):
+        if self.render_mode is None:
+            return None
+
+        frame = self._render_frame()
+        if self.render_mode == "rgb_array":
+            return frame
+        return None
+
+    def _render_frame(self):
+        if self.render_mode == "human" and self.window is None:
+            pygame.init()
+            pygame.display.init()
+            self.window = pygame.display.set_mode(
+                (self.window_size, self.window_size)
+            )
+        if self.render_mode == "human" and self.clock is None:
+            self.clock = pygame.time.Clock()
+
+        canvas = pygame.Surface((self.window_size, self.window_size))
+        canvas.fill((255, 255, 255))
+
+        # Convert grid coordinates [x, y] to pixel coordinates without reversing axes.
+        pix_square_size = self.window_size / self.size
+        target_x, target_y = self._target_location
+        left = round(target_x * pix_square_size)
+        top = round(target_y * pix_square_size)
+        right = round((target_x + 1) * pix_square_size)
+        bottom = round((target_y + 1) * pix_square_size)
+        pygame.draw.rect(
+            canvas,
+            (255, 0, 0),
+            pygame.Rect(left, top, right - left, bottom - top),
+        )
+
+        # Draw the agent at the center of its [x, y] grid cell.
+        agent_x, agent_y = self._agent_location
+        agent_center = (
+            round((agent_x + 0.5) * pix_square_size),
+            round((agent_y + 0.5) * pix_square_size),
+        )
+        pygame.draw.circle(
+            canvas,
+            (0, 0, 255),
+            agent_center,
+            max(1, int(pix_square_size * 0.3)),
+        )
+
+        # Draw horizontal and vertical gridlines.
+        for grid_index in range(self.size + 1):
+            pixel = round(grid_index * pix_square_size)
+            pygame.draw.line(
+                canvas,
+                (0, 0, 0),
+                (0, pixel),
+                (self.window_size, pixel),
+                width=1,
+            )
+            pygame.draw.line(
+                canvas,
+                (0, 0, 0),
+                (pixel, 0),
+                (pixel, self.window_size),
+                width=1,
+            )
+
+        if self.render_mode == "human":
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.close()
+                    return None
+
+            self.window.blit(canvas, (0, 0))
+            pygame.display.flip()
+            self.clock.tick(self.metadata["render_fps"])
+            return None
+
+        # Pygame arrays are indexed [x, y, channel]; Gymnasium expects [y, x, channel].
+        return pygame.surfarray.array3d(canvas).transpose(1, 0, 2).copy()
+
+    def close(self):
+        if self.window is not None:
+            pygame.display.quit()
+            self.window = None
+            self.clock = None
+
+            
