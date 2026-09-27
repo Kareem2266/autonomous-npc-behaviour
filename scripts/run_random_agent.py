@@ -2,7 +2,7 @@ from autonomous_npc.envs.office_env import OfficeEnv
 from autonomous_npc.envs.office_env import Action
 import numpy as np
 
-def choose_action(observation):
+def choose_action(observation, env):
     agent = observation["agent"]
     target = observation["target"]
 
@@ -30,7 +30,7 @@ total_reward = 0
 
 try:
     while not episode_over:
-        action = choose_action(observation)
+        action = choose_action(observation,env)
         observation, reward, terminated, truncated, info = env.step(action)
 
         total_reward += reward
