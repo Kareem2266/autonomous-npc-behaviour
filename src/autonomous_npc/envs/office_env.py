@@ -92,6 +92,10 @@ class OfficeEnv(gym.Env):
         return observation, info
 
     def step(self, action):
+
+        # rewards progress
+        old_distance = self._get_info()["distance"]
+
         # Map tthe action element to the direction
         if action not in self._action_to_direction:
              direction = 0
@@ -103,11 +107,18 @@ class OfficeEnv(gym.Env):
              self._agent_location + direction, 0, self.size - 1
         )
 
+        new_distance = self._get_info()["distance"]
+
         # Check if it reached the target
         terminated = np.array_equal(self._agent_location, self._target_location)
 
-        # Binary sparse reward
-        reward = 1 if terminated else 0
+        difference = old_distance - new_distance
+
+        # Per step feedback
+        reward = 0.1 * difference - 0.01
+        if terminated:
+            reward += 1
+
         observation = self._get_obs()
         info = self._get_info()
 
