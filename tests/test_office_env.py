@@ -66,16 +66,33 @@ def test_reset_info_reports_manhattan_distance():
 
 
 @pytest.mark.parametrize(
-    ("action", "expected_location"),
+    ("action", "expected_reward"),
+    [(Action.EAST, 0.09), (Action.NORTH, -0.11)],
+    ids=["moves-closer", "moves-farther"],
+)
+def test_reward_reflects_progress_toward_target(action, expected_reward):
+    environment = OfficeEnv(size=5)
+    environment._agent_location = np.array([2, 2], dtype=np.int32)
+    environment._target_location = np.array([4, 4], dtype=np.int32)
+
+    _, reward, _, _, _ = environment.step(action)
+
+    assert reward == pytest.approx(expected_reward)
+
+
+@pytest.mark.parametrize(
+    ("action", "expected_location", "expected_reward"),
     [
-        (Action.NORTH, [2, 1]),
-        (Action.EAST, [3, 2]),
-        (Action.SOUTH, [2, 3]),
-        (Action.WEST, [1, 2]),
+        (Action.NORTH, [2, 1], -0.11),
+        (Action.EAST, [3, 2], 0.09),
+        (Action.SOUTH, [2, 3], 0.09),
+        (Action.WEST, [1, 2], -0.11),
     ],
     ids=["north", "east", "south", "west"],
 )
-def test_movement_action_moves_agent_and_preserves_target(action, expected_location):
+def test_movement_action_moves_agent_and_preserves_target(
+    action, expected_location, expected_reward
+):
     environment = OfficeEnv(size=5)
     environment._agent_location = np.array([2, 2], dtype=np.int32)
     environment._target_location = np.array([4, 4], dtype=np.int32)
@@ -84,7 +101,7 @@ def test_movement_action_moves_agent_and_preserves_target(action, expected_locat
 
     np.testing.assert_array_equal(observation["agent"], expected_location)
     np.testing.assert_array_equal(observation["target"], [4, 4])
-    assert reward == 0
+    assert reward == pytest.approx(expected_reward)
     assert terminated is False
     assert truncated is False
     assert info["distance"] == 8 - sum(expected_location)
@@ -105,9 +122,10 @@ def test_movement_stays_within_grid_boundaries(action, start_location):
     environment._agent_location = np.array(start_location, dtype=np.int32)
     environment._target_location = np.array([4, 4], dtype=np.int32)
 
-    observation, _, _, _, _ = environment.step(action)
+    observation, reward, _, _, _ = environment.step(action)
 
     np.testing.assert_array_equal(observation["agent"], start_location)
+    assert reward == pytest.approx(-0.01)
 
 
 @pytest.mark.parametrize(
@@ -121,7 +139,7 @@ def test_non_movement_actions_leave_agent_in_place(action):
     observation, reward, terminated, truncated, _ = environment.step(action)
 
     np.testing.assert_array_equal(observation["agent"], [2, 2])
-    assert reward == 0
+    assert reward == pytest.approx(-0.01)
     assert terminated is False
     assert truncated is False
 
@@ -134,7 +152,7 @@ def test_reaching_target_gives_reward_and_terminates_episode():
     observation, reward, terminated, truncated, _ = environment.step(Action.EAST)
 
     np.testing.assert_array_equal(observation["agent"], [3, 2])
-    assert reward == 1
+    assert reward == pytest.approx(1.09)
     assert terminated is True
     assert truncated is False
 
