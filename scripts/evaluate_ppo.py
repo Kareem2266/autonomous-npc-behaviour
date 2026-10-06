@@ -13,16 +13,25 @@ def main():
         steps = 0
         terminated = False
         truncated = False
-
+        trajectory = []
         while not terminated and not truncated and steps < 100:
+           
+           before = tuple(observation["agent"])
            action, _ = model.predict(observation, deterministic=True)
            action = action.item()
+           after = tuple(observation["agent"])
+
+           trajectory.append((before, action, after))
            observation, reward, terminated, truncated, info = env.step(action)
            steps += 1
         
         if terminated:
             successes += 1
             successful_steps += steps
+        else:
+            print(f"Failed seed {episode}; target: {tuple(observation['target'])}")
+            print("Last 12 moves (before, action number, after):", trajectory[-12:])
+
         print(f"Episode {episode + 1}: reached target: {terminated}; steps: {steps}")
     print(f"Success rate: {successes}/20")
     
