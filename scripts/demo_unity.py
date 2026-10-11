@@ -19,7 +19,9 @@ def main():
     # Unity must be in Play mode and listening before Python connects
     with socket.create_connection(("127.0.0.1", 5005)) as connection:
         send_state(connection, observation)
-        time.sleep(0.5)
+        # Let the scene agent reach the episode's initial grid position before
+        # the policy sends its first move.
+        time.sleep(2.0)
 
         for step in range(100):
             action, _ = model.predict(observation, deterministic=True)
@@ -29,7 +31,8 @@ def main():
 
             send_state(connection, observation)
             print(f"Step {step + 1}: agent at {observation['agent']}")
-            time.sleep(0.5)
+            # Give Unity enough time to finish a one-cell move before the next command.
+            time.sleep(1.0)
 
             if terminated or truncated:
                 print("Episode finished.")
