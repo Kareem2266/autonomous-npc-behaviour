@@ -396,6 +396,7 @@ GameObject:
   - component: {fileID: 703540657}
   - component: {fileID: 703540656}
   - component: {fileID: 703540660}
+  - component: {fileID: 703540661}
   m_Layer: 0
   m_Name: Agent
   m_TagString: Untagged
@@ -508,6 +509,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9f42166eb80d84b4f9d305489f11b4de, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GridAgentController
+--- !u!114 &703540661
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 703540655}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 02cc72aea896b43258ee550396de0782, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PythonCommandReceiver
+  target: {fileID: 1743333979}
 --- !u!1 &771501676
 GameObject:
   m_ObjectHideFlags: 0

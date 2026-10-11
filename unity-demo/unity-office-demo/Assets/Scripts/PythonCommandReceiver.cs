@@ -8,7 +8,8 @@ using UnityEngine;
 
 public class PythonCommandReceiver : MonoBehaviour
 {
-    private readonly ConcurrentQueue<Vector2Int> positions = new();
+    [SerializeField] private Transform target;
+    private readonly ConcurrentQueue<string> messages = new();
     private TcpListener listener;
     private Thread listenerThread;
     private GridAgentController agent;
@@ -20,8 +21,10 @@ public class PythonCommandReceiver : MonoBehaviour
         listener = new TcpListener(IPAddress.Loopback, 5005);
         listener.Start();
 
-        listenerThread = new Thread(ListenForCommands);
-        listenerThread.IsBackground = true;
+        listenerThread = new Thread(ListenForCommands)
+        {
+            IsBackground = true
+        };
         listenerThread.Start();
 
         Debug.Log("Waiting for python on port 5005");
@@ -38,14 +41,7 @@ public class PythonCommandReceiver : MonoBehaviour
                 string line;
                 while ((line = reader.ReadLine()) != null)
                 {
-                    string[] coordinates = line.Split(',');
-
-                    if (coordinates.Length == 2 &&
-                        int.TryParse(coordinates[0], out int x) &&
-                        int.TryParse(coordinates[1], out int y))
-                    {
-                        positions.Enqueue(new Vector2Int(x, y));
-                    }
+                    messages.Enqueue(line);
                 }
             }
         }
@@ -53,11 +49,24 @@ public class PythonCommandReceiver : MonoBehaviour
         catch (ObjectDisposedException) { }
     }
 
-    private void Update()
-    {
-        while (positions.TryDequeue(out Vector2Int position))
-        {
-            agent.MoveToGridPosition(position.x, position.y);
+    private void Update() {
+         while (messages.TryDequeue(out string line)) {
+            string[] values = line.Split(',');
+
+            if (values.Length != 4 ||
+                !int.TryParse(values[0], out int agentX) ||
+                !int.TryParse(values[1], out int agentY) ||
+                !int.TryParse(values[2], out int targetX) ||
+                !int.TryParse(values[3], out int targetY)) {
+                Debug.LogWarning($"Invalid position message: {line}");
+                continue;
+            }
+
+            agent.MoveToGridPosition(agentX, agentY);
+            target.position = new Vector3(
+            targetX - 2,
+            target.position.y,
+            2 - targetY);
         }
     }
 
