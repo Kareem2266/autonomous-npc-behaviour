@@ -132,7 +132,8 @@ class OfficeEnv(gym.Env):
              self._agent_location + direction, 0, self.size - 1
         )
 
-        if not np.array_equal(proposed_location, self._obstacle_location):
+        hit_obstacle = np.array_equal(proposed_location, self._obstacle_location)
+        if not hit_obstacle:
             self._agent_location = proposed_location
 
         new_distance = self._get_info()["distance"]
@@ -144,8 +145,13 @@ class OfficeEnv(gym.Env):
 
         # Per step feedback
         reward = 0.1 * difference - 0.01
+
+        if hit_obstacle:
+            reward -= 0.2
+
         if terminated:
             reward += 1
+
 
         observation = self._get_obs()
         info = self._get_info()

@@ -3,7 +3,7 @@ from stable_baselines3 import PPO
 
 def main():
     env = OfficeEnv()
-    model = PPO.load("office_ppo_50k", env=env)
+    model = PPO.load("office_ppo_obstacle", env=env)
     
     successes = 0
     successful_steps = 0
