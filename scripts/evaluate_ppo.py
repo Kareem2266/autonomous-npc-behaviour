@@ -1,9 +1,10 @@
 from autonomous_npc.envs.office_env import OfficeEnv
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+# from stable_baselines3 import PPO
 
 def main():
     env = OfficeEnv()
-    model = PPO.load("office_task_ppo", env=env)
+    model = MaskablePPO.load("office_10x10_masked_ppo", env=env)
     
     successes = 0
     successful_steps = 0
@@ -13,6 +14,7 @@ def main():
     for episode in range(run_amount):
         observation, info = env.reset(seed=episode)
         shortest_steps = int(info["distance"])
+        picked_up = False
         steps = 0
         terminated = False
         truncated = False
@@ -21,7 +23,11 @@ def main():
            
             before = tuple(observation["agent"])
             previous_target = tuple(observation["target"])
-            action, _ = model.predict(observation, deterministic=True)
+            action, _ = model.predict(
+                observation,
+                deterministic=True,
+                action_masks=env.action_masks(),
+            )
             action = action.item()
            
             observation, _, terminated, truncated, info = env.step(action)
@@ -29,7 +35,10 @@ def main():
             trajectory.append((before, action, after))
 
             if tuple(observation["target"]) != previous_target:
-                shortest_steps += 1 + int(info["distance"])
+                shortest_steps += int(info["distance"])
+                if not picked_up:
+                    shortest_steps += 1
+                    picked_up = True
 
             steps += 1
         
