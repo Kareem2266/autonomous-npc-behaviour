@@ -6,6 +6,17 @@
 - Design version: v0.1
 - Status: M1 in progress; October 18 Unity demo in progress
 
+## Current checkpoint (2026-10-11)
+
+- Branch: `agent-task-loop`. Worktree has uncommitted changes to the task environment, PPO training/evaluation scripts, tests, and Unity demo bridge; `office_task_ppo.zip` is untracked.
+- Python environment: `OfficeEnv` now runs a fetch-and-deliver episode: the agent starts with the desk as its target, `INTERACT` at the desk marks the document picked up and changes the target to the printer, and reaching the printer ends the episode. The obstacle remains part of navigation.
+- PPO: trained a new checkpoint, `office_task_ppo.zip`. Evaluation over 100 seeded episodes achieved 100/100 deliveries, with 10.8 average steps, 10.8 average shortest route, and 0.0 average extra steps. This result applies to these seeded 5×5 scenarios.
+- Tests: task-loop pickup and delivery cases were added, and the previous target-reaching test was updated to represent delivery while carrying the document. Latest full suite: `.venv/bin/python -m pytest -q` — 64 passed.
+- Evaluator: now tracks movement after each action, adds the interaction and printer leg when the target changes, guards averages for zero successes, and avoids duplicate average output.
+- Unity bridge: `scripts/demo_unity.py` now loads `office_task_ppo` and logs pickup/delivery; `PythonCommandReceiver.cs` creates blue desk and orange printer floor markers at runtime. Unity compilation and the live end-to-end run have not yet been checked.
+- Immediate next step: run the task policy in Unity, confirm the agent travels to the desk, the target switches to the printer after pickup, and delivery ends the episode. Then capture any compile/runtime issue and update this checkpoint.
+- Learning/collaboration preference: Kareem is learning and wants to make the project code changes personally. Do not edit project code unless Kareem explicitly asks for code edits; a general approval to proceed with a task should be handled in guided mode unless he clearly asks Codex to implement it. Codex should explain changes and check the actual workspace before making claims.
+
 ## Current checkpoint (2026-10-10)
 
 - Repository branch: `unity-demo-creation`, based on `main` at `e084d3f`. Current worktree changes are `.gitignore` and the untracked `unity-demo/` Unity project; neither has been committed yet.
@@ -109,7 +120,7 @@ Expected M4 timeline at 5–8 hours/week: roughly three months.
 
 ## Collaboration preference
 
-The owner intends to implement milestones personally. Codex should serve as a reviewer, debugging partner, and design collaborator when given code, errors, or decisions—not automatically implement entire milestones unless explicitly asked.
+The owner intends to implement milestones personally. Codex should serve as a reviewer, debugging partner, and design collaborator when given code, errors, or decisions. Do not edit project code unless Kareem explicitly asks Codex to make code changes; a general “let’s do that” should be treated as guided work, not automatic permission to edit files.
 
 ## Product direction
 
@@ -166,6 +177,7 @@ At the beginning of each work session, compare the current repo and demo against
 
 ## Learning log
 
+- 2026-10-11 — Added a desk-to-printer fetch-and-deliver task loop to `OfficeEnv`; PPO completed 100/100 seeded 5×5 episodes with average steps equal to the measured shortest route (10.8). Updated evaluator route accounting and added task transition tests; full suite: 64 passed. Started adapting Unity visualization to use the task checkpoint and display desk/printer markers; end-to-end Unity validation remains. Kareem clarified the collaboration boundary: only make project code edits when explicitly asked, and keep the work guided and explanatory.
 - 2026-09-12 — Initial project design captured.
 - 2026-09-13 — Migrated durable project context into the shared Codex knowledge vault.
 - 2026-09-13 — Clarified the product goal: reusable and configurable for external companies, with 3D engine support planned after the core RL system is validated in 2D.
