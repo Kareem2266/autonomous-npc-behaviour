@@ -1,9 +1,10 @@
 from autonomous_npc.envs.office_env import OfficeEnv
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+# from stable_baselines3 import PPO
 
 def main():
     env = OfficeEnv()
-    model = PPO.load("office_10x10_tasks_ppo", env=env)
+    model = MaskablePPO.load("office_10x10_masked_ppo", env=env)
     
     successes = 0
     successful_steps = 0
@@ -22,7 +23,11 @@ def main():
            
             before = tuple(observation["agent"])
             previous_target = tuple(observation["target"])
-            action, _ = model.predict(observation, deterministic=True)
+            action, _ = model.predict(
+                observation,
+                deterministic=True,
+                action_masks=env.action_masks(),
+            )
             action = action.item()
            
             observation, _, terminated, truncated, info = env.step(action)
