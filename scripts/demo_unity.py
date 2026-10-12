@@ -4,13 +4,18 @@ import socket
 import time
 
 from autonomous_npc.envs.office_env import OfficeEnv
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
+# from stable_baselines3 import PPO
 
 def send_state(connection, observation):
     agent_x, agent_y = map(int, observation["agent"])
     target_x, target_y = map(int, observation["target"])
+    obstacles = observation["obstacle"].astype(int).flatten()
 
-    message = f"{agent_x},{agent_y},{target_x},{target_y}\n"
+    message = (
+        f"{agent_x},{agent_y},{target_x},{target_y},"
+        f"{obstacles[0]},{obstacles[1]},{obstacles[2]},{obstacles[3]}\n"
+    )
     connection.sendall(message.encode("utf-8"))
 
 def main():
@@ -24,7 +29,7 @@ def main():
     seed = args.seed if args.seed is not None else secrets.randbits(32)
 
     env = OfficeEnv()
-    model = PPO.load("office_task_ppo")
+    model = MaskablePPO.load("office_10x10_masked_ppo")
     observation, _ = env.reset(seed=seed)
     print(f"Episode seed: {seed}")
 
@@ -35,7 +40,11 @@ def main():
 
         for step in range(100):
             previous_target = tuple(observation["target"])
-            action, _ = model.predict(observation, deterministic=True)
+            action, _ = model.predict(
+                observation,
+                deterministic=True,
+                action_masks=env.action_masks(),
+            )
             observation, reward, terminated, truncated, info = env.step(
                 action.item()
             )
