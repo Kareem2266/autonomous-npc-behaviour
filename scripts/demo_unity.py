@@ -13,7 +13,7 @@ def send_state(connection, observation):
 
 def main():
     env = OfficeEnv()
-    model = PPO.load("office_ppo_50k")
+    model = PPO.load("office_ppo_obstacle")
     observation, _ = env.reset(seed=42)
 
     # Unity must be in Play mode and listening before Python connects

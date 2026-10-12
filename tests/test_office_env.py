@@ -53,7 +53,7 @@ def test_reset_with_same_seed_reproduces_starting_positions():
     )
 
 
-def test_reset_info_reports_manhattan_distance():
+def test_reset_info_reports_shortest_walkable_distance():
     environment = OfficeEnv(size=5)
 
     observation, info = environment.reset(seed=42)
@@ -63,6 +63,38 @@ def test_reset_info_reports_manhattan_distance():
     expected_distance = coordinate_difference.sum()
 
     assert info["distance"] == expected_distance
+
+
+@pytest.mark.parametrize("seed", range(20), ids=lambda seed: f"seed={seed}")
+def test_reset_never_places_agent_or_target_on_obstacle(seed):
+    environment = OfficeEnv(size=5)
+
+    observation, _ = environment.reset(seed=seed)
+
+    assert not np.array_equal(observation["agent"], observation["obstacle"])
+    assert not np.array_equal(observation["target"], observation["obstacle"])
+
+
+def test_path_distance_counts_route_around_obstacle():
+    environment = OfficeEnv(size=5)
+    environment._agent_location = np.array([1, 2], dtype=np.int32)
+    environment._target_location = np.array([3, 2], dtype=np.int32)
+
+    assert environment._get_info()["distance"] == 4
+
+
+def test_move_into_obstacle_is_blocked():
+    environment = OfficeEnv(size=5)
+    environment._agent_location = np.array([1, 2], dtype=np.int32)
+    environment._target_location = np.array([3, 2], dtype=np.int32)
+
+    observation, reward, terminated, truncated, info = environment.step(Action.EAST)
+
+    np.testing.assert_array_equal(observation["agent"], [1, 2])
+    assert reward == pytest.approx(-0.21)
+    assert info["distance"] == 4
+    assert terminated is False
+    assert truncated is False
 
 
 @pytest.mark.parametrize(
@@ -133,12 +165,12 @@ def test_movement_stays_within_grid_boundaries(action, start_location):
 )
 def test_non_movement_actions_leave_agent_in_place(action):
     environment = OfficeEnv(size=5)
-    environment._agent_location = np.array([2, 2], dtype=np.int32)
+    environment._agent_location = np.array([1, 1], dtype=np.int32)
     environment._target_location = np.array([4, 4], dtype=np.int32)
 
     observation, reward, terminated, truncated, _ = environment.step(action)
 
-    np.testing.assert_array_equal(observation["agent"], [2, 2])
+    np.testing.assert_array_equal(observation["agent"], [1, 1])
     assert reward == pytest.approx(-0.01)
     assert terminated is False
     assert truncated is False
