@@ -153,6 +153,9 @@ def test_movement_action_moves_agent_and_preserves_target(
     environment = OfficeEnv(size=5)
     environment._agent_location = np.array([2, 2], dtype=np.int32)
     environment._target_location = np.array([4, 4], dtype=np.int32)
+    environment._obstacle_locations = np.array(
+        [[0, 0], [0, 4]], dtype=np.int32
+    )
 
     observation, reward, terminated, truncated, info = environment.step(action)
 
@@ -206,6 +209,8 @@ def test_reaching_target_gives_reward_and_terminates_episode():
     environment._agent_location = np.array([1, 1], dtype=np.int32)
     environment._target_location = np.array([2, 1], dtype=np.int32)
     environment._carrying_document = True
+    environment._task_route = [environment._target_location.copy()]
+    environment._route_index = 0
 
     observation, reward, terminated, truncated, _ = environment.step(Action.EAST)
 
@@ -219,6 +224,8 @@ def test_interacting_at_desk_picks_up_document_and_targets_printer():
     environment = OfficeEnv(size=5)
     environment._agent_location = environment._desk_location.copy()
     environment._target_location = environment._desk_location.copy()
+    environment._task_route = [environment._printer_location.copy()]
+    environment._route_index = 0
 
     observation, reward, terminated, truncated, info = environment.step(Action.INTERACT)
 
@@ -236,6 +243,8 @@ def test_reaching_printer_with_document_ends_episode():
     environment._agent_location = environment._printer_location.copy()
     environment._target_location = environment._printer_location.copy()
     environment._carrying_document = True
+    environment._task_route = [environment._printer_location.copy()]
+    environment._route_index = 0
 
     observation, reward, terminated, truncated, info = environment.step(Action.WAIT)
 
@@ -244,6 +253,57 @@ def test_reaching_printer_with_document_ends_episode():
     assert terminated is True
     assert truncated is False
     assert info["distance"] == 0
+
+
+def test_reaching_intermediate_task_stop_updates_target_without_terminating():
+    environment = OfficeEnv(size=10)
+    environment._agent_location = environment._snack_location.copy()
+    environment._target_location = environment._snack_location.copy()
+    environment._carrying_document = True
+    environment._task_route = [
+        environment._snack_location.copy(),
+        environment._coffee_location.copy(),
+        environment._desk_location.copy(),
+    ]
+    environment._route_index = 0
+
+    observation, _, terminated, truncated, _ = environment.step(Action.WAIT)
+
+    np.testing.assert_array_equal(observation["target"], environment._coffee_location)
+    assert environment._route_index == 1
+    assert terminated is False
+    assert truncated is False
+
+
+def test_reset_chooses_a_valid_task_route_and_keeps_obstacles_off_stations():
+    environment = OfficeEnv(size=10)
+
+    environment.reset(seed=42)
+
+    valid_routes = [
+        [tuple(environment._printer_location), tuple(environment._desk_location)],
+        [tuple(environment._bathroom_location), tuple(environment._desk_location)],
+        [
+            tuple(environment._snack_location),
+            tuple(environment._coffee_location),
+            tuple(environment._desk_location),
+        ],
+        [tuple(environment._snack_location), tuple(environment._desk_location)],
+        [tuple(environment._coffee_location), tuple(environment._desk_location)],
+    ]
+    selected_route = [tuple(location) for location in environment._task_route]
+    stations = {
+        tuple(environment._desk_location),
+        tuple(environment._printer_location),
+        tuple(environment._bathroom_location),
+        tuple(environment._snack_location),
+        tuple(environment._coffee_location),
+    }
+    obstacle_cells = {tuple(location) for location in environment._obstacle_locations}
+
+    assert selected_route in valid_routes
+    assert environment._route_index == 0
+    assert obstacle_cells.isdisjoint(stations)
 
 
 def test_rgb_array_render_uses_xy_coordinates_and_returns_height_width_channels():
