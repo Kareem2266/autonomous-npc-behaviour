@@ -4,8 +4,8 @@ from stable_baselines3 import PPO
 def main():
     env = OfficeEnv()
     model = PPO("MultiInputPolicy",env, verbose=1)
-    model.learn(total_timesteps=50_000)
-    model.save("office_task_ppo")
+    model.learn(total_timesteps=500_000)
+    model.save("office_10x10_tasks_ppo")
     observation, info = env.reset()
 
     print(f"Starting observation: {observation}")
