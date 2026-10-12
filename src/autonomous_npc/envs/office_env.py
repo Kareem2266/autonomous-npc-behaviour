@@ -1,5 +1,6 @@
 from enum import IntEnum
 from typing import Optional
+from collections import deque
 import numpy as np
 import gymnasium as gym
 import pygame
@@ -39,12 +40,14 @@ class OfficeEnv(gym.Env):
         # Initialize positions, will be randmsly set in reset (-1 is unitialized state for now)
         self._agent_location = np.array([-1,-1], dtype=np.int32)
         self._target_location = np.array([-1,-1], dtype=np.int32)
+        self._obstacle_location = np.array([size // 2, size // 2], dtype=np.int32)
 
         # Defining what agent can observe
         self.observation_space = gym.spaces.Dict(
             {
                 "agent": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int),
-                "target": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int)
+                "target": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int),
+                "obstacle": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int)
             }
         )
 
@@ -59,15 +62,36 @@ class OfficeEnv(gym.Env):
 
     # Using this to get environement internal state
     def _get_obs(self):
-        return {"agent": self._agent_location, "target": self._target_location}
+        return {"agent": self._agent_location, "target": self._target_location, "obstacle": self._obstacle_location}
+
+    def _get_path_distance(self):
+        start = tuple(self._agent_location)
+        target = tuple(self._target_location)
+        obstacle = tuple(self._obstacle_location)
+        queue = deque([(start,0)])
+        visited = {start}
+
+        while queue:
+            current, distance = queue.popleft()
+            if current == target:
+                return distance
+
+            for direction in self._action_to_direction.values():
+                next_position = np.array(current) + direction
+                if np.any(next_position < 0) or np.any(next_position >= self.size):
+                    continue
+
+                next_cell = tuple(next_position)
+                if next_cell == obstacle or next_cell in visited:
+                    continue
+
+                visited.add(next_cell)
+                queue.append((next_cell, distance + 1))
+        return float("inf")
 
     # Find distance between agent and target
     def _get_info(self):
-        return {
-            "distance": np.linalg.norm(
-                self._agent_location - self._target_location, ord=1
-            )
-        }
+        return {"distance": self._get_path_distance()}
 
     def reset(self, seed=None, options=None):
         # seed self.np_random
@@ -76,12 +100,13 @@ class OfficeEnv(gym.Env):
         # choose agnet location at random (uniformally)
         self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
-        # Sample target location rnadomly until it does not conflict with agent
+        while np.array_equal(self._agent_location, self._obstacle_location):
+            self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+
         self._target_location = self._agent_location
-        while np.array_equal(self._target_location, self._agent_location):
-            self._target_location = self.np_random.integers(
-                0, self.size, size=2, dtype=int
-            )
+        while (np.array_equal(self._target_location, self._agent_location)
+            or np.array_equal(self._target_location, self._obstacle_location)):
+            self._target_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
         observation = self._get_obs()
         info = self._get_info()
@@ -103,9 +128,13 @@ class OfficeEnv(gym.Env):
             direction = self._action_to_direction[action]
 
         # use np.clip to stay in grid
-        self._agent_location = np.clip(
+        proposed_location = np.clip(
              self._agent_location + direction, 0, self.size - 1
         )
+
+        hit_obstacle = np.array_equal(proposed_location, self._obstacle_location)
+        if not hit_obstacle:
+            self._agent_location = proposed_location
 
         new_distance = self._get_info()["distance"]
 
@@ -116,8 +145,13 @@ class OfficeEnv(gym.Env):
 
         # Per step feedback
         reward = 0.1 * difference - 0.01
+
+        if hit_obstacle:
+            reward -= 0.2
+
         if terminated:
             reward += 1
+
 
         observation = self._get_obs()
         info = self._get_info()
@@ -162,6 +196,13 @@ class OfficeEnv(gym.Env):
             (255, 0, 0),
             pygame.Rect(left, top, right - left, bottom - top),
         )
+
+        obstacle_x, obstacle_y = self._obstacle_location
+        left = round(obstacle_x * pix_square_size)
+        top = round(obstacle_y * pix_square_size)
+        right = round((obstacle_x + 1) * pix_square_size)
+        bottom = round((obstacle_y + 1) * pix_square_size)
+        pygame.draw.rect(canvas, (80, 80, 80), pygame.Rect(left, top, right - left, bottom - top))
 
         # Draw the agent at the center of its [x, y] grid cell.
         agent_x, agent_y = self._agent_location
