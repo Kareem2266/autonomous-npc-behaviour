@@ -41,11 +41,16 @@ class OfficeEnv(gym.Env):
         self._agent_location = np.array([-1,-1], dtype=np.int32)
         self._target_location = np.array([-1,-1], dtype=np.int32)
         self._obstacle_location = np.array([size // 2, size // 2], dtype=np.int32)
+        self._previous_agent_location = np.array([-1, -1], dtype=np.int32)
+        self._desk_location = np.array([0, size // 2], dtype=np.int32)
+        self._printer_location = np.array([size - 1, (size -1) // 2], dtype=np.int32)
+        self._carrying_document = False
 
         # Defining what agent can observe
         self.observation_space = gym.spaces.Dict(
             {
                 "agent": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int),
+                "previous_agent": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int),
                 "target": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int),
                 "obstacle": gym.spaces.Box(0, size - 1, shape=(2,), dtype=int)
             }
@@ -62,7 +67,10 @@ class OfficeEnv(gym.Env):
 
     # Using this to get environement internal state
     def _get_obs(self):
-        return {"agent": self._agent_location, "target": self._target_location, "obstacle": self._obstacle_location}
+        return {"agent": self._agent_location,
+                "previous_agent": self._previous_agent_location,
+                "target": self._target_location,
+                "obstacle": self._obstacle_location}
 
     def _get_path_distance(self):
         start = tuple(self._agent_location)
@@ -96,17 +104,18 @@ class OfficeEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # seed self.np_random
         super().reset(seed=seed)
+        self._carrying_document = False
 
-        # choose agnet location at random (uniformally)
+        # choose agent location at random (uniformally)
         self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
-        while np.array_equal(self._agent_location, self._obstacle_location):
+        while (
+            np.array_equal(self._agent_location, self._obstacle_location) or
+            np.array_equal(self._agent_location, self._desk_location)):
             self._agent_location = self.np_random.integers(0, self.size, size=2, dtype=int)
 
-        self._target_location = self._agent_location
-        while (np.array_equal(self._target_location, self._agent_location)
-            or np.array_equal(self._target_location, self._obstacle_location)):
-            self._target_location = self.np_random.integers(0, self.size, size=2, dtype=int)
+        self._previous_agent_location = self._agent_location.copy()
+        self._target_location = self._desk_location.copy()
 
         observation = self._get_obs()
         info = self._get_info()
@@ -132,19 +141,32 @@ class OfficeEnv(gym.Env):
              self._agent_location + direction, 0, self.size - 1
         )
 
+        reversed_step = not np.array_equal(proposed_location, self._agent_location) and np.array_equal(proposed_location, self._previous_agent_location)
+
         hit_obstacle = np.array_equal(proposed_location, self._obstacle_location)
-        if not hit_obstacle:
+        if not hit_obstacle and not np.array_equal(proposed_location, self._agent_location):
+            self._previous_agent_location = self._agent_location.copy()
             self._agent_location = proposed_location
 
         new_distance = self._get_info()["distance"]
 
         # Check if it reached the target
-        terminated = np.array_equal(self._agent_location, self._target_location)
+        terminated = False
+
+        if np.array_equal(self._agent_location, self._target_location):
+            if not self._carrying_document and action == Action.INTERACT:
+                    self._carrying_document = True
+                    self._target_location = self._printer_location.copy()
+            elif self._carrying_document:
+                terminated = True
 
         difference = old_distance - new_distance
 
         # Per step feedback
         reward = 0.1 * difference - 0.01
+
+        if reversed_step:
+            reward -= 0.05
 
         if hit_obstacle:
             reward -= 0.2
