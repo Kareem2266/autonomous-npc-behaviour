@@ -112,6 +112,31 @@ def test_reward_reflects_progress_toward_target(action, expected_reward):
     assert reward == pytest.approx(expected_reward)
 
 
+def test_moving_back_to_previous_cell_gets_reversal_penalty():
+    environment = OfficeEnv(size=5)
+    environment._agent_location = np.array([1, 1], dtype=np.int32)
+    environment._previous_agent_location = np.array([2, 1], dtype=np.int32)
+    environment._target_location = np.array([4, 4], dtype=np.int32)
+
+    observation, reward, _, _, _ = environment.step(Action.EAST)
+
+    np.testing.assert_array_equal(observation["agent"], [2, 1])
+    np.testing.assert_array_equal(observation["previous_agent"], [1, 1])
+    assert reward == pytest.approx(0.04)
+
+
+def test_wait_does_not_get_reversal_penalty_when_previous_cell_is_current_cell():
+    environment = OfficeEnv(size=5)
+    environment._agent_location = np.array([1, 1], dtype=np.int32)
+    environment._previous_agent_location = environment._agent_location.copy()
+    environment._target_location = np.array([4, 4], dtype=np.int32)
+
+    observation, reward, _, _, _ = environment.step(Action.WAIT)
+
+    np.testing.assert_array_equal(observation["agent"], [1, 1])
+    assert reward == pytest.approx(-0.01)
+
+
 @pytest.mark.parametrize(
     ("action", "expected_location", "expected_reward"),
     [
@@ -178,15 +203,47 @@ def test_non_movement_actions_leave_agent_in_place(action):
 
 def test_reaching_target_gives_reward_and_terminates_episode():
     environment = OfficeEnv(size=5)
-    environment._agent_location = np.array([2, 2], dtype=np.int32)
-    environment._target_location = np.array([3, 2], dtype=np.int32)
+    environment._agent_location = np.array([1, 1], dtype=np.int32)
+    environment._target_location = np.array([2, 1], dtype=np.int32)
+    environment._carrying_document = True
 
     observation, reward, terminated, truncated, _ = environment.step(Action.EAST)
 
-    np.testing.assert_array_equal(observation["agent"], [3, 2])
+    np.testing.assert_array_equal(observation["agent"], [2, 1])
     assert reward == pytest.approx(1.09)
     assert terminated is True
     assert truncated is False
+
+
+def test_interacting_at_desk_picks_up_document_and_targets_printer():
+    environment = OfficeEnv(size=5)
+    environment._agent_location = environment._desk_location.copy()
+    environment._target_location = environment._desk_location.copy()
+
+    observation, reward, terminated, truncated, info = environment.step(Action.INTERACT)
+
+    np.testing.assert_array_equal(observation["agent"], environment._desk_location)
+    np.testing.assert_array_equal(observation["target"], environment._printer_location)
+    assert environment._carrying_document is True
+    assert reward == pytest.approx(-0.01)
+    assert terminated is False
+    assert truncated is False
+    assert info["distance"] > 0
+
+
+def test_reaching_printer_with_document_ends_episode():
+    environment = OfficeEnv(size=5)
+    environment._agent_location = environment._printer_location.copy()
+    environment._target_location = environment._printer_location.copy()
+    environment._carrying_document = True
+
+    observation, reward, terminated, truncated, info = environment.step(Action.WAIT)
+
+    np.testing.assert_array_equal(observation["agent"], environment._printer_location)
+    assert reward == pytest.approx(0.99)
+    assert terminated is True
+    assert truncated is False
+    assert info["distance"] == 0
 
 
 def test_rgb_array_render_uses_xy_coordinates_and_returns_height_width_channels():
