@@ -215,6 +215,28 @@ class OfficeEnv(gym.Env):
 
         return observation, info
 
+    def action_masks(self):
+        mask = np.ones(self.action_space.n, dtype=bool)
+
+        for action, direction in self._action_to_direction.items():
+            next_location = self._agent_location + direction
+            outside_grid = np.any(next_location < 0) or np.any(next_location >= self.size)
+            hits_obstacle = any(
+                np.array_equal(next_location, obstacle)
+                for obstacle in self._obstacle_locations
+            )
+            if outside_grid or hits_obstacle:
+                mask[action] = False
+
+        mask[Action.INTERACT] = (
+            not self._carrying_document
+            and np.array_equal(self._agent_location, self._desk_location)
+            and np.array_equal(self._target_location, self._desk_location)
+        )
+        mask[Action.WAIT] = False
+
+        return mask
+
     def step(self, action):
 
         # rewards progress
