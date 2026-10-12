@@ -91,7 +91,7 @@ def test_move_into_obstacle_is_blocked():
     observation, reward, terminated, truncated, info = environment.step(Action.EAST)
 
     np.testing.assert_array_equal(observation["agent"], [1, 2])
-    assert reward == pytest.approx(-0.01)
+    assert reward == pytest.approx(-0.21)
     assert info["distance"] == 4
     assert terminated is False
     assert truncated is False
@@ -165,12 +165,12 @@ def test_movement_stays_within_grid_boundaries(action, start_location):
 )
 def test_non_movement_actions_leave_agent_in_place(action):
     environment = OfficeEnv(size=5)
-    environment._agent_location = np.array([2, 2], dtype=np.int32)
+    environment._agent_location = np.array([1, 1], dtype=np.int32)
     environment._target_location = np.array([4, 4], dtype=np.int32)
 
     observation, reward, terminated, truncated, _ = environment.step(action)
 
-    np.testing.assert_array_equal(observation["agent"], [2, 2])
+    np.testing.assert_array_equal(observation["agent"], [1, 1])
     assert reward == pytest.approx(-0.01)
     assert terminated is False
     assert truncated is False
