@@ -3,7 +3,7 @@ from stable_baselines3 import PPO
 
 def main():
     env = OfficeEnv()
-    model = PPO.load("office_ppo_obstacle", env=env)
+    model = PPO.load("office_task_ppo", env=env)
     
     successes = 0
     successful_steps = 0
@@ -19,14 +19,19 @@ def main():
         trajectory = []
         while not terminated and not truncated and steps < 100:
            
-           before = tuple(observation["agent"])
-           action, _ = model.predict(observation, deterministic=True)
-           action = action.item()
-           after = tuple(observation["agent"])
+            before = tuple(observation["agent"])
+            previous_target = tuple(observation["target"])
+            action, _ = model.predict(observation, deterministic=True)
+            action = action.item()
+           
+            observation, _, terminated, truncated, info = env.step(action)
+            after = tuple(observation["agent"])
+            trajectory.append((before, action, after))
 
-           trajectory.append((before, action, after))
-           observation, reward, terminated, truncated, info = env.step(action)
-           steps += 1
+            if tuple(observation["target"]) != previous_target:
+                shortest_steps += 1 + int(info["distance"])
+
+            steps += 1
         
         if terminated:
             successes += 1
@@ -39,15 +44,14 @@ def main():
         print(f"Episode {episode + 1}: reached target: {terminated}; steps: {steps}")
     print(f"Success rate: {successes}/{run_amount}")
 
-    average_steps = successful_steps / successes
-    average_shortest = successful_shortest_steps / successes
-    print(f"Average steps: {average_steps:.1f}")
-    print(f"Average shortest route: {average_shortest:.1f}")
-    print(f"Average extra steps: {average_steps - average_shortest:.1f}")
-
-    
     if successes:
-        print(f"Average steps on success: {successful_steps / successes:.1f}")
+        average_steps = successful_steps / successes
+        average_shortest = successful_shortest_steps / successes
+        print(f"Average steps: {average_steps:.1f}")
+        print(f"Average shortest route: {average_shortest:.1f}")
+        print(f"Average extra steps: {average_steps - average_shortest:.1f}")
+    else:
+        print("No successful episodes.")
 
     env.close()
 

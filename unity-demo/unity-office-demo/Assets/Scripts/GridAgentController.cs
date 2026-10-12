@@ -20,4 +20,9 @@ public class GridAgentController : MonoBehaviour
     public void MoveToGridPosition(int x, int y) {
         destination = new Vector3(x - 2, 0.5f, 2 - y);
     }
+
+    public void SnapToGridPosition(int x, int y) {
+        destination = new Vector3(x - 2, 0.5f, 2 - y);
+        transform.position = destination;
+    }
 }
