@@ -3,7 +3,7 @@ from stable_baselines3 import PPO
 
 def main():
     env = OfficeEnv()
-    model = PPO.load("office_task_ppo", env=env)
+    model = PPO.load("office_10x10_tasks_ppo", env=env)
     
     successes = 0
     successful_steps = 0
@@ -13,6 +13,7 @@ def main():
     for episode in range(run_amount):
         observation, info = env.reset(seed=episode)
         shortest_steps = int(info["distance"])
+        picked_up = False
         steps = 0
         terminated = False
         truncated = False
@@ -29,7 +30,10 @@ def main():
             trajectory.append((before, action, after))
 
             if tuple(observation["target"]) != previous_target:
-                shortest_steps += 1 + int(info["distance"])
+                shortest_steps += int(info["distance"])
+                if not picked_up:
+                    shortest_steps += 1
+                    picked_up = True
 
             steps += 1
         
