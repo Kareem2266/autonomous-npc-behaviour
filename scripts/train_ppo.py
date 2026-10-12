@@ -5,7 +5,7 @@ def main():
     env = OfficeEnv()
     model = PPO("MultiInputPolicy",env, verbose=1)
     model.learn(total_timesteps=50_000)
-    model.save("office_ppo_50k")
+    model.save("office_ppo_obstacle")
     observation, info = env.reset()
 
     print(f"Starting observation: {observation}")
