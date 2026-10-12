@@ -13,10 +13,13 @@ public class PythonCommandReceiver : MonoBehaviour
     private TcpListener listener;
     private Thread listenerThread;
     private GridAgentController agent;
+    private bool hasReceivedInitialState;
 
     private void Start()
     {
         agent = GetComponent<GridAgentController>();
+        CreateStationMarker("Desk", 0, 2, new Color(0.2f, 0.65f, 0.95f));
+        CreateStationMarker("Printer", 4, 2, new Color(0.95f, 0.55f, 0.15f));
 
         listener = new TcpListener(IPAddress.Loopback, 5005);
         listener.Start();
@@ -28,6 +31,16 @@ public class PythonCommandReceiver : MonoBehaviour
         listenerThread.Start();
 
         Debug.Log("Waiting for python on port 5005");
+    }
+
+    private void CreateStationMarker(string stationName, int x, int y, Color color)
+    {
+        GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        marker.name = stationName;
+        marker.transform.position = new Vector3(x - 2, 0.03f, 2 - y);
+        marker.transform.localScale = new Vector3(0.85f, 0.06f, 0.85f);
+        Destroy(marker.GetComponent<Collider>());
+        marker.GetComponent<Renderer>().material.color = color;
     }
 
     private void ListenForCommands()
@@ -47,6 +60,7 @@ public class PythonCommandReceiver : MonoBehaviour
         }
         catch (SocketException) { }
         catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
     }
 
     private void Update() {
@@ -62,7 +76,12 @@ public class PythonCommandReceiver : MonoBehaviour
                 continue;
             }
 
-            agent.MoveToGridPosition(agentX, agentY);
+            if (!hasReceivedInitialState) {
+                agent.SnapToGridPosition(agentX, agentY);
+                hasReceivedInitialState = true;
+            } else {
+                agent.MoveToGridPosition(agentX, agentY);
+            }
             target.position = new Vector3(
             targetX - 2,
             target.position.y,
