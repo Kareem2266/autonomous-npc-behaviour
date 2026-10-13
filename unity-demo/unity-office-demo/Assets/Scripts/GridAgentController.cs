@@ -3,10 +3,25 @@ using UnityEngine;
 public class GridAgentController : MonoBehaviour
 {
     [SerializeField] private float moveSpeed = 2f;
+    [SerializeField] private float walkBobHeight = 0.15f;
+    [SerializeField] private float walkBobFrequency = 6f;
+    [SerializeField] private float bobSmoothTime = 0.12f;
     private Vector3 destination;
+    private Transform[] visualParts;
+    private Vector3[] visualBasePositions;
+    private float walkBobPhase;
+    private float currentBobOffset;
+    private float bobOffsetVelocity;
+    private bool wasWalking;
 
     private void Start() {
         destination = transform.position;
+        visualParts = new Transform[transform.childCount];
+        visualBasePositions = new Vector3[transform.childCount];
+        for (int i = 0; i < transform.childCount; i++) {
+            visualParts[i] = transform.GetChild(i);
+            visualBasePositions[i] = visualParts[i].localPosition;
+        }
     }
 
     private void Update() {
@@ -15,6 +30,30 @@ public class GridAgentController : MonoBehaviour
             destination,
             moveSpeed * Time.deltaTime
         );
+
+        bool isWalking = (transform.position - destination).sqrMagnitude > 0.0001f;
+        if (isWalking && !wasWalking) {
+            walkBobPhase = 0f;
+        }
+        if (isWalking) {
+            walkBobPhase += Time.deltaTime * walkBobFrequency;
+        }
+
+        float targetBobOffset = isWalking
+            ? (0.5f - 0.5f * Mathf.Cos(walkBobPhase)) * walkBobHeight
+            : 0f;
+        currentBobOffset = Mathf.SmoothDamp(
+            currentBobOffset,
+            targetBobOffset,
+            ref bobOffsetVelocity,
+            bobSmoothTime);
+        wasWalking = isWalking;
+
+        for (int i = 0; i < visualParts.Length; i++) {
+            Vector3 localPosition = visualBasePositions[i];
+            localPosition.y += currentBobOffset;
+            visualParts[i].localPosition = localPosition;
+        }
     }
 
     public void MoveToGridPosition(int x, int y) {

@@ -184,7 +184,7 @@ class OfficeEnv(gym.Env):
             blocked_cells = {tuple(cell) for cell in obstacles}
             reachable_starts = []
             for cell in all_cells:
-                if cell in blocked_cells or cell == tuple(self._desk_location):
+                if cell in blocked_cells or cell in reserved_cells:
                     continue
 
                 self._agent_location = np.asarray(cell, dtype=np.int32)
