@@ -22,6 +22,10 @@ public class PythonCommandReceiver : MonoBehaviour
     private Transform[] obstacleMarkers = new Transform[2];
     private Transform snackItem;
     private Transform[] coffeeCupParts = Array.Empty<Transform>();
+    private Transform printedPaper;
+    private Transform bathroomStation;
+    private Vector3 printerPaperStart;
+    private Vector3 printerPaperEnd;
     private bool hasReceivedInitialState;
 
     private void Start()
@@ -39,7 +43,16 @@ public class PythonCommandReceiver : MonoBehaviour
         {
             bathroomStationPrefab = Resources.Load<GameObject>("PortaPotty");
         }
-        SpawnStationPrefab(bathroomStationPrefab, "Bathroom", new Vector3(3.5f, 0f, -3.5f));
+        if (printerStationPrefab == null)
+        {
+            printerStationPrefab = Resources.Load<GameObject>("PrinterStation");
+        }
+        GameObject spawnedBathroom = SpawnStationPrefab(
+            bathroomStationPrefab, "Bathroom", new Vector3(3.5f, 0f, -3.5f));
+        if (spawnedBathroom != null)
+        {
+            bathroomStation = spawnedBathroom.transform;
+        }
         GameObject snackStation = SpawnStationPrefab(
             snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
         if (snackStation != null)
@@ -57,13 +70,16 @@ public class PythonCommandReceiver : MonoBehaviour
                 coffeeStation.transform.Find("Coffee Cup Rim")
             };
         }
-        if (printerStationPrefab != null)
+        GameObject printerStation = SpawnStationPrefab(
+            printerStationPrefab, "Printer", new Vector3(3.5f, 0f, 2.5f));
+        if (printerStation != null)
         {
-            Instantiate(printerStationPrefab, new Vector3(3.5f, 0f, 2.5f), Quaternion.identity);
-        }
-        else
-        {
-            Debug.LogWarning("Printer station prefab is not assigned on PythonCommandReceiver.");
+            printedPaper = printerStation.transform.Find("Printed Paper");
+            if (printedPaper != null)
+            {
+                printerPaperStart = printedPaper.localPosition;
+                printerPaperEnd = printerPaperStart + Vector3.back * 0.32f;
+            }
         }
         if (deskPrefab != null)
         {
@@ -143,6 +159,29 @@ public class PythonCommandReceiver : MonoBehaviour
                 items[i].localPosition = startingPositions[i];
             }
         }
+    }
+
+    private IEnumerator AnimatePrintedPaper()
+    {
+        if (printedPaper == null)
+        {
+            yield break;
+        }
+
+        printedPaper.gameObject.SetActive(true);
+        printedPaper.localPosition = printerPaperStart;
+        const float duration = 0.7f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+            printedPaper.localPosition = Vector3.Lerp(printerPaperStart, printerPaperEnd, t);
+            yield return null;
+        }
+        printedPaper.localPosition = printerPaperEnd;
+        yield return new WaitForSeconds(0.5f);
+        printedPaper.gameObject.SetActive(false);
     }
 
     private void CreateStationMarker(string stationName, int x, int y, Color color)
@@ -229,6 +268,15 @@ public class PythonCommandReceiver : MonoBehaviour
                 {
                     StartCoroutine(AnimatePickup(coffeeCupParts));
                 }
+                else if (interaction.IndexOf("printer", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    StartCoroutine(AnimatePrintedPaper());
+                }
+                else if (interaction.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    StartCoroutine(agent.PlayBathroomBreak());
+                    StartCoroutine(AnimateBathroomJump());
+                }
                 continue;
             }
 
@@ -266,6 +314,34 @@ public class PythonCommandReceiver : MonoBehaviour
                 0.4f,
                 4.5f - obstacleTwoY);
         }
+    }
+
+    private IEnumerator AnimateBathroomJump()
+    {
+        if (bathroomStation == null)
+        {
+            yield break;
+        }
+
+        while (!agent.HasReachedDestination)
+        {
+            yield return null;
+        }
+
+        Vector3 startPosition = bathroomStation.localPosition;
+        const float duration = 1f;
+        const float jumpHeight = 0.45f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float lift = jumpHeight * Mathf.Sin(
+                Mathf.PI * Mathf.Clamp01(elapsed / duration));
+            bathroomStation.localPosition = startPosition + Vector3.up * lift;
+            yield return null;
+        }
+
+        bathroomStation.localPosition = startPosition;
     }
 
     private void OnDestroy()
