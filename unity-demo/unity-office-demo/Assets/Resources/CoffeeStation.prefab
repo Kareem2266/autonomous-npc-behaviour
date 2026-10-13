@@ -847,7 +847,7 @@ GameObject:
   - component: {fileID: 200093}
   - component: {fileID: 200094}
   m_Layer: 0
-  m_Name: CoffeeStation Part 10
+  m_Name: Coffee Cup Lower
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -935,7 +935,7 @@ GameObject:
   - component: {fileID: 200103}
   - component: {fileID: 200104}
   m_Layer: 0
-  m_Name: CoffeeStation Part 11
+  m_Name: Coffee Cup Rim
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
