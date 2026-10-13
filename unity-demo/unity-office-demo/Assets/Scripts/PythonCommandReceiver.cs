@@ -13,6 +13,7 @@ public class PythonCommandReceiver : MonoBehaviour
     [SerializeField] private GameObject printerStationPrefab;
     [SerializeField] private GameObject snackStationPrefab;
     [SerializeField] private GameObject coffeeStationPrefab;
+    [SerializeField] private GameObject bathroomStationPrefab;
     private readonly ConcurrentQueue<string> messages = new();
     private TcpListener listener;
     private Thread listenerThread;
@@ -31,7 +32,11 @@ public class PythonCommandReceiver : MonoBehaviour
         {
             coffeeStationPrefab = Resources.Load<GameObject>("CoffeeStation");
         }
-        CreateStationMarker("Bathroom", 8, 8, new Color(0.65f, 0.4f, 0.8f));
+        if (bathroomStationPrefab == null)
+        {
+            bathroomStationPrefab = Resources.Load<GameObject>("PortaPotty");
+        }
+        SpawnStationPrefab(bathroomStationPrefab, "Bathroom", new Vector3(3.5f, 0f, -3.5f));
         SpawnStationPrefab(snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
         SpawnStationPrefab(coffeeStationPrefab, "Coffee Area", new Vector3(-1.5f, 0f, -3.5f));
         if (printerStationPrefab != null)

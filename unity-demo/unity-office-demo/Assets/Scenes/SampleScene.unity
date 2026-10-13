@@ -641,6 +641,7 @@ MonoBehaviour:
   printerStationPrefab: {fileID: 100000, guid: 9bbcb7c6425c408e93f4a2a26bcad721, type: 3}
   snackStationPrefab: {fileID: 100000, guid: b05d481de33d46a1a2a9fb0919001460, type: 3}
   coffeeStationPrefab: {fileID: 100000, guid: c51f9cde074b4d56b19d8a58b198e1da, type: 3}
+  bathroomStationPrefab: {fileID: 100000, guid: f6521cf53b5e4abcbebc6a65da831b70, type: 3}
 --- !u!1 &771501676
 GameObject:
   m_ObjectHideFlags: 0
