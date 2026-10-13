@@ -5,7 +5,7 @@ from sb3_contrib import MaskablePPO
 def main():
     env = OfficeEnv()
     model = MaskablePPO("MultiInputPolicy",env, verbose=1)
-    model.learn(total_timesteps=50_000)
+    model.learn(total_timesteps=200_000)
     model.save("office_10x10_masked_ppo")
     observation, info = env.reset()
 

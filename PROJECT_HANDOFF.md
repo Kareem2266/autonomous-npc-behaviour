@@ -1,6 +1,6 @@
 # Autonomous NPC Project Handoff
 
-Updated: 2026-10-12
+Updated: 2026-10-13
 
 Use this note to resume work in a new chat. It describes the repository state checked on this date and carries forward the project context and collaboration preferences.
 
@@ -39,13 +39,15 @@ Each reset chooses one of five routes at random:
 - Desk → Snack Area → Desk
 - Desk → Coffee Area → Desk
 
-The agent starts in a randomly selected reachable cell. Its first target is the desk. It must use `INTERACT` at the desk to pick up the document, then visits each selected route stop. The episode ends when it finishes the route and returns to the desk.
+The agent starts in a randomly selected reachable cell. Its first target is the desk. It must use `INTERACT` at the desk to pick up the document, then travel to each selected route stop and use `INTERACT` there before continuing. The final return to the desk also requires `INTERACT` to complete delivery. Reaching a station no longer advances the route by itself.
 
 Two distinct obstacles are selected randomly on each reset. They cannot overlap a station, and candidate layouts are rejected if a route leg or the agent’s path to the desk is blocked. A breadth-first search in `_get_path_distance()` calculates shortest walkable distance around obstacles.
 
 The observation is a dictionary containing `agent`, `previous_agent`, `target`, and two `obstacle` coordinates. The six actions are north, east, south, west, interact, and wait.
 
-`action_masks()` masks moves outside the grid or into obstacles. It allows `INTERACT` only when the agent is at the desk before pickup and masks `WAIT`. Rewards give progress toward the current target, apply a per-step cost, penalize reversing and obstacle impacts, and reward completing the route. The exact reward logic is in `step()` in `office_env.py`.
+`action_masks()` masks moves outside the grid or into obstacles. When the agent reaches its current target, it masks movement and allows `INTERACT` to perform the station action; it also masks `WAIT`. Rewards give progress toward the current target, apply a per-step cost, penalize reversing and obstacle impacts, and reward completing the route. The exact reward logic is in `step()` in `office_env.py`.
+
+The station-interaction action rules changed on 2026-10-13. The existing PPO model was trained before this change and must be retrained before it can reliably perform the new task.
 
 ## PPO model and reported evaluation
 
@@ -98,7 +100,8 @@ Tests were reported passing after the environment, task-route, and action-mask w
 
 ## Collaboration preferences
 
-- Do not write or change code unless Kareem explicitly asks for implementation. When he asks what to do, guide him through the change instead of doing it.
+- Guide Kareem through code changes; do not edit code unless he literally says, “Hey, you code this out.” Requests such as “let’s do it,” “work on this,” or “look at this” are not authorization to edit code. If unsure, explain the steps for Kareem to make himself.
+- When Kareem asks what to do, guide him through the change instead of implementing it unless he explicitly asks for implementation.
 - Explain clearly and confidently. Give the exact file, location, and replacement instructions. Keep related code together and avoid excessive, fragmented code blocks.
 - Kareem is still learning Unity. Give concrete panel names and click-by-click directions when needed.
 - For progress notes, use concise bullets such as “Added X” and “Fixed Y”; do not phrase them as “we did X.”

@@ -15,11 +15,20 @@ STATION_NAMES = {
     (3, 8): "Coffee Area",
 }
 
+# The environment targets these neighboring cells, not the station tiles.
+APPROACH_STATION_NAMES = {
+    (2, 5): "Desk",
+    (7, 2): "Printer",
+    (7, 8): "Bathroom",
+    (2, 2): "Snack Area",
+    (2, 8): "Coffee Area",
+}
+
 STATION_INTERACTIONS = {
-    (8, 2): "Printed a page",
-    (8, 8): "Taking a quick bathroom break",
-    (3, 2): "Picked up a snack",
-    (3, 8): "Picked up a cup of coffee",
+    (7, 2): "Printed a page",
+    (7, 8): "Taking a quick bathroom break",
+    (2, 2): "Picked up a snack",
+    (2, 8): "Picked up a cup of coffee",
 }
 
 def send_state(connection, observation):
@@ -74,16 +83,20 @@ def main():
             print(f"Step {step + 1}: agent at {observation['agent']}")
             reached_station = tuple(observation["target"]) != previous_target
             if reached_station:
-                reached_name = STATION_NAMES.get(previous_target, "unknown location")
+                reached_name = APPROACH_STATION_NAMES.get(
+                    previous_target, "unknown location"
+                )
                 interaction = STATION_INTERACTIONS.get(previous_target)
                 if interaction:
                     event = f"{interaction} at the {reached_name}."
                     print(f"Interaction: {event}")
                     connection.sendall(f"INTERACTION:{event}\n".encode("utf-8"))
-                target_name = STATION_NAMES.get(tuple(observation["target"]), "unknown location")
+                target_name = APPROACH_STATION_NAMES.get(
+                    tuple(observation["target"]), "unknown location"
+                )
                 print(f"Target changed to {target_name}.")
             if reached_station or terminated:
-                station_pause = 2.0 if previous_target == (8, 8) else 1.0
+                station_pause = 2.0 if previous_target == (7, 8) else 1.0
                 time.sleep(station_pause)
             else:
                 # At 2 Unity units per second, a one-cell move takes about 0.5 seconds.
