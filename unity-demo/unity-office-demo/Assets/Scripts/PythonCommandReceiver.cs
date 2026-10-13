@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -19,6 +20,8 @@ public class PythonCommandReceiver : MonoBehaviour
     private Thread listenerThread;
     private GridAgentController agent;
     private Transform[] obstacleMarkers = new Transform[2];
+    private Transform snackItem;
+    private Transform[] coffeeCupParts = Array.Empty<Transform>();
     private bool hasReceivedInitialState;
 
     private void Start()
@@ -37,8 +40,23 @@ public class PythonCommandReceiver : MonoBehaviour
             bathroomStationPrefab = Resources.Load<GameObject>("PortaPotty");
         }
         SpawnStationPrefab(bathroomStationPrefab, "Bathroom", new Vector3(3.5f, 0f, -3.5f));
-        SpawnStationPrefab(snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
-        SpawnStationPrefab(coffeeStationPrefab, "Coffee Area", new Vector3(-1.5f, 0f, -3.5f));
+        GameObject snackStation = SpawnStationPrefab(
+            snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
+        if (snackStation != null)
+        {
+            snackItem = snackStation.transform.Find("Snack Bag");
+        }
+
+        GameObject coffeeStation = SpawnStationPrefab(
+            coffeeStationPrefab, "Coffee Area", new Vector3(-1.5f, 0f, -3.5f));
+        if (coffeeStation != null)
+        {
+            coffeeCupParts = new[]
+            {
+                coffeeStation.transform.Find("Coffee Cup Lower"),
+                coffeeStation.transform.Find("Coffee Cup Rim")
+            };
+        }
         if (printerStationPrefab != null)
         {
             Instantiate(printerStationPrefab, new Vector3(3.5f, 0f, 2.5f), Quaternion.identity);
@@ -75,17 +93,56 @@ public class PythonCommandReceiver : MonoBehaviour
         Debug.Log("Waiting for python on port 5005");
     }
 
-    private void SpawnStationPrefab(GameObject prefab, string stationName, Vector3 position)
+    private GameObject SpawnStationPrefab(GameObject prefab, string stationName, Vector3 position)
     {
         if (prefab == null)
         {
             Debug.LogWarning($"{stationName} prefab is not assigned on PythonCommandReceiver.");
-            return;
+            return null;
         }
 
         GameObject station = Instantiate(prefab, position, Quaternion.identity);
         station.name = stationName;
         Debug.Log($"{stationName} spawned at {station.transform.position}");
+        return station;
+    }
+
+    private IEnumerator AnimatePickup(Transform[] items)
+    {
+        Vector3[] startingPositions = new Vector3[items.Length];
+        for (int i = 0; i < items.Length; i++)
+        {
+            if (items[i] == null)
+            {
+                continue;
+            }
+            startingPositions[i] = items[i].localPosition;
+        }
+
+        const float duration = 0.65f;
+        const float liftHeight = 0.22f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float lift = liftHeight * Mathf.Sin(Mathf.PI * Mathf.Clamp01(elapsed / duration));
+            for (int i = 0; i < items.Length; i++)
+            {
+                if (items[i] != null)
+                {
+                    items[i].localPosition = startingPositions[i] + Vector3.up * lift;
+                }
+            }
+            yield return null;
+        }
+
+        for (int i = 0; i < items.Length; i++)
+        {
+            if (items[i] != null)
+            {
+                items[i].localPosition = startingPositions[i];
+            }
+        }
     }
 
     private void CreateStationMarker(string stationName, int x, int y, Color color)
@@ -158,6 +215,20 @@ public class PythonCommandReceiver : MonoBehaviour
             if (line.StartsWith("ROUTE:")) {
                 string route = line.Substring("ROUTE:".Length).Replace(",", " -> ");
                 Debug.Log($"Planned task route: {route}");
+                continue;
+            }
+
+            if (line.StartsWith("INTERACTION:")) {
+                string interaction = line.Substring("INTERACTION:".Length);
+                Debug.Log($"Station interaction: {interaction}");
+                if (interaction.IndexOf("snack", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    StartCoroutine(AnimatePickup(new[] { snackItem }));
+                }
+                else if (interaction.IndexOf("coffee", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    StartCoroutine(AnimatePickup(coffeeCupParts));
+                }
                 continue;
             }
 

@@ -15,6 +15,11 @@ STATION_NAMES = {
     (3, 8): "Coffee Area",
 }
 
+STATION_INTERACTIONS = {
+    (3, 2): "Picked up a snack",
+    (3, 8): "Picked up a cup of coffee",
+}
+
 def send_state(connection, observation):
     agent_x, agent_y = map(int, observation["agent"])
     target_x, target_y = map(int, observation["target"])
@@ -67,6 +72,12 @@ def main():
             print(f"Step {step + 1}: agent at {observation['agent']}")
             reached_station = tuple(observation["target"]) != previous_target
             if reached_station:
+                reached_name = STATION_NAMES.get(previous_target, "unknown location")
+                interaction = STATION_INTERACTIONS.get(previous_target)
+                if interaction:
+                    event = f"{interaction} at the {reached_name}."
+                    print(f"Interaction: {event}")
+                    connection.sendall(f"INTERACTION:{event}\n".encode("utf-8"))
                 target_name = STATION_NAMES.get(tuple(observation["target"]), "unknown location")
                 print(f"Target changed to {target_name}.")
             if reached_station or terminated:
