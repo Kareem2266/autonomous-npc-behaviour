@@ -9,6 +9,8 @@ using UnityEngine;
 public class PythonCommandReceiver : MonoBehaviour
 {
     [SerializeField] private Transform target;
+    [SerializeField] private GameObject deskPrefab;
+    [SerializeField] private GameObject printerStationPrefab;
     private readonly ConcurrentQueue<string> messages = new();
     private TcpListener listener;
     private Thread listenerThread;
@@ -19,11 +21,30 @@ public class PythonCommandReceiver : MonoBehaviour
     private void Start()
     {
         agent = GetComponent<GridAgentController>();
-        CreateStationMarker("Desk", 1, 5, new Color(0.2f, 0.65f, 0.95f));
-        CreateStationMarker("Printer", 8, 2, new Color(0.95f, 0.55f, 0.15f));
         CreateStationMarker("Bathroom", 8, 8, new Color(0.65f, 0.4f, 0.8f));
         CreateStationMarker("Snack Area", 3, 2, new Color(0.3f, 0.75f, 0.35f));
         CreateStationMarker("Coffee Area", 3, 8, new Color(0.55f, 0.32f, 0.18f));
+        if (printerStationPrefab != null)
+        {
+            Instantiate(printerStationPrefab, new Vector3(3.5f, 0f, 2.5f), Quaternion.identity);
+        }
+        else
+        {
+            Debug.LogWarning("Printer station prefab is not assigned on PythonCommandReceiver.");
+        }
+        if (deskPrefab != null)
+        {
+            GameObject spawnedDesk = Instantiate(
+                deskPrefab,
+                new Vector3(-3.5f, 0f, -0.5f),
+                Quaternion.identity);
+            spawnedDesk.name = "Desk at Desk Station";
+            Debug.Log($"Desk spawned at {spawnedDesk.transform.position}");
+        }
+        else
+        {
+            Debug.LogWarning("Desk prefab is not assigned on PythonCommandReceiver.");
+        }
         obstacleMarkers[0] = CreateObstacleMarker("Obstacle 1");
         obstacleMarkers[1] = CreateObstacleMarker("Obstacle 2");
 
@@ -106,6 +127,12 @@ public class PythonCommandReceiver : MonoBehaviour
 
     private void Update() {
          while (messages.TryDequeue(out string line)) {
+            if (line.StartsWith("ROUTE:")) {
+                string route = line.Substring("ROUTE:".Length).Replace(",", " -> ");
+                Debug.Log($"Planned task route: {route}");
+                continue;
+            }
+
             string[] values = line.Split(',');
 
             if (values.Length != 8 ||
