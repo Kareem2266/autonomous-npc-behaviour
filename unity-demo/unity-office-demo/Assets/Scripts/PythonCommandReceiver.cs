@@ -11,6 +11,8 @@ public class PythonCommandReceiver : MonoBehaviour
     [SerializeField] private Transform target;
     [SerializeField] private GameObject deskPrefab;
     [SerializeField] private GameObject printerStationPrefab;
+    [SerializeField] private GameObject snackStationPrefab;
+    [SerializeField] private GameObject coffeeStationPrefab;
     private readonly ConcurrentQueue<string> messages = new();
     private TcpListener listener;
     private Thread listenerThread;
@@ -21,9 +23,17 @@ public class PythonCommandReceiver : MonoBehaviour
     private void Start()
     {
         agent = GetComponent<GridAgentController>();
+        if (snackStationPrefab == null)
+        {
+            snackStationPrefab = Resources.Load<GameObject>("SnackStation");
+        }
+        if (coffeeStationPrefab == null)
+        {
+            coffeeStationPrefab = Resources.Load<GameObject>("CoffeeStation");
+        }
         CreateStationMarker("Bathroom", 8, 8, new Color(0.65f, 0.4f, 0.8f));
-        CreateStationMarker("Snack Area", 3, 2, new Color(0.3f, 0.75f, 0.35f));
-        CreateStationMarker("Coffee Area", 3, 8, new Color(0.55f, 0.32f, 0.18f));
+        SpawnStationPrefab(snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
+        SpawnStationPrefab(coffeeStationPrefab, "Coffee Area", new Vector3(-1.5f, 0f, -3.5f));
         if (printerStationPrefab != null)
         {
             Instantiate(printerStationPrefab, new Vector3(3.5f, 0f, 2.5f), Quaternion.identity);
@@ -58,6 +68,19 @@ public class PythonCommandReceiver : MonoBehaviour
         listenerThread.Start();
 
         Debug.Log("Waiting for python on port 5005");
+    }
+
+    private void SpawnStationPrefab(GameObject prefab, string stationName, Vector3 position)
+    {
+        if (prefab == null)
+        {
+            Debug.LogWarning($"{stationName} prefab is not assigned on PythonCommandReceiver.");
+            return;
+        }
+
+        GameObject station = Instantiate(prefab, position, Quaternion.identity);
+        station.name = stationName;
+        Debug.Log($"{stationName} spawned at {station.transform.position}");
     }
 
     private void CreateStationMarker(string stationName, int x, int y, Color color)
