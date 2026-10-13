@@ -16,6 +16,8 @@ STATION_NAMES = {
 }
 
 STATION_INTERACTIONS = {
+    (8, 2): "Printed a page",
+    (8, 8): "Taking a quick bathroom break",
     (3, 2): "Picked up a snack",
     (3, 8): "Picked up a cup of coffee",
 }
@@ -81,7 +83,8 @@ def main():
                 target_name = STATION_NAMES.get(tuple(observation["target"]), "unknown location")
                 print(f"Target changed to {target_name}.")
             if reached_station or terminated:
-                time.sleep(1.0)
+                station_pause = 2.0 if previous_target == (8, 8) else 1.0
+                time.sleep(station_pause)
             else:
                 # At 2 Unity units per second, a one-cell move takes about 0.5 seconds.
                 time.sleep(0.5)
