@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 
 public class GridAgentController : MonoBehaviour
@@ -13,9 +14,18 @@ public class GridAgentController : MonoBehaviour
     private float currentBobOffset;
     private float bobOffsetVelocity;
     private bool wasWalking;
+    private Renderer[] agentRenderers;
 
     private void Start() {
         destination = transform.position;
+        // The root's cube mesh is only a movement placeholder. Keep the
+        // child body and head as the visible character.
+        MeshRenderer rootRenderer = GetComponent<MeshRenderer>();
+        if (rootRenderer != null) {
+            rootRenderer.enabled = false;
+        }
+        agentRenderers = GetComponentsInChildren<Renderer>(true);
+
         visualParts = new Transform[transform.childCount];
         visualBasePositions = new Vector3[transform.childCount];
         for (int i = 0; i < transform.childCount; i++) {
@@ -55,6 +65,28 @@ public class GridAgentController : MonoBehaviour
             visualParts[i].localPosition = localPosition;
         }
     }
+
+    public IEnumerator PlayBathroomBreak() {
+        while (!HasReachedDestination) {
+            yield return null;
+        }
+
+        bool[] wasEnabled = new bool[agentRenderers.Length];
+        for (int i = 0; i < agentRenderers.Length; i++) {
+            wasEnabled[i] = agentRenderers[i].enabled;
+            agentRenderers[i].enabled = false;
+        }
+
+        yield return new WaitForSeconds(1f);
+
+        for (int i = 0; i < agentRenderers.Length; i++) {
+            agentRenderers[i].enabled = wasEnabled[i];
+        }
+    }
+
+    public bool HasReachedDestination =>
+        new Vector2(transform.position.x - destination.x,
+                    transform.position.z - destination.z).sqrMagnitude <= 0.0001f;
 
     public void MoveToGridPosition(int x, int y) {
         destination = new Vector3(x - 4.5f, 0.5f, 4.5f - y);
