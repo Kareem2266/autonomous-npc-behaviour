@@ -58,6 +58,7 @@ public class PythonCommandReceiver : MonoBehaviour
             snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
         if (snackStation != null)
         {
+            DecorateSnackStation(snackStation.transform);
             snackItem = snackStation.transform.Find("Snack Bag");
         }
 
@@ -65,6 +66,7 @@ public class PythonCommandReceiver : MonoBehaviour
             coffeeStationPrefab, "Coffee Area", new Vector3(-1.5f, 0f, -3.5f));
         if (coffeeStation != null)
         {
+            DecorateCoffeeStation(coffeeStation.transform);
             coffeeCupParts = new[]
             {
                 coffeeStation.transform.Find("Coffee Cup Lower"),
@@ -75,6 +77,7 @@ public class PythonCommandReceiver : MonoBehaviour
             printerStationPrefab, "Printer", new Vector3(3.5f, 0f, 2.5f));
         if (printerStation != null)
         {
+            DecoratePrinterStation(printerStation.transform);
             printedPaper = printerStation.transform.Find("Printed Paper");
             if (printedPaper != null)
             {
@@ -297,6 +300,52 @@ public class PythonCommandReceiver : MonoBehaviour
             new Vector3(0.07f, 0.07f, 0.07f), charcoal);
         CreateDeskPiece("Chair Caster", desk, new Vector3(0.29f, 0.035f, -0.43f),
             new Vector3(0.07f, 0.07f, 0.07f), charcoal);
+    }
+
+    private void DecoratePrinterStation(Transform printer)
+    {
+        Material bezel = CreateOfficeMaterial(new Color(0.11f, 0.15f, 0.17f), 0.3f);
+        Material display = CreateOfficeMaterial(new Color(0.23f, 0.62f, 0.66f), 0.5f);
+        Material buttonGreen = CreateOfficeMaterial(new Color(0.31f, 0.63f, 0.44f), 0.18f);
+        Material buttonAmber = CreateOfficeMaterial(new Color(0.88f, 0.58f, 0.22f), 0.18f);
+
+        CreateDeskPiece("Printer Display Bezel", printer, new Vector3(0.12f, 0.94f, -0.211f),
+            new Vector3(0.12f, 0.08f, 0.018f), bezel);
+        CreateDeskPiece("Printer Display Glass", printer, new Vector3(0.12f, 0.94f, -0.222f),
+            new Vector3(0.09f, 0.052f, 0.008f), display);
+        CreateDeskPiece("Printer Green Button", printer, new Vector3(-0.12f, 0.86f, -0.211f),
+            new Vector3(0.045f, 0.035f, 0.012f), buttonGreen);
+        CreateDeskPiece("Printer Amber Button", printer, new Vector3(-0.05f, 0.86f, -0.211f),
+            new Vector3(0.045f, 0.035f, 0.012f), buttonAmber);
+    }
+
+    private void DecorateCoffeeStation(Transform coffee)
+    {
+        Material bezel = CreateOfficeMaterial(new Color(0.12f, 0.16f, 0.17f), 0.3f);
+        Material display = CreateOfficeMaterial(new Color(0.32f, 0.66f, 0.65f), 0.42f);
+        Material button = CreateOfficeMaterial(new Color(0.84f, 0.57f, 0.26f), 0.18f);
+        Material saucer = CreateOfficeMaterial(new Color(0.88f, 0.84f, 0.73f), 0.22f);
+
+        CreateDeskPiece("Coffee Machine Control Bezel", coffee, new Vector3(0f, 0.99f, -0.197f),
+            new Vector3(0.13f, 0.09f, 0.018f), bezel);
+        CreateDeskPiece("Coffee Machine Display", coffee, new Vector3(0f, 0.99f, -0.209f),
+            new Vector3(0.095f, 0.055f, 0.008f), display);
+        CreateDeskPiece("Coffee Machine Button", coffee, new Vector3(0.105f, 0.91f, -0.197f),
+            new Vector3(0.045f, 0.045f, 0.012f), button);
+        CreateDeskPiece("Coffee Cup Saucer", coffee, new Vector3(-0.23f, 0.77f, 0.17f),
+            new Vector3(0.20f, 0.02f, 0.20f), saucer);
+        CreateDeskPiece("Coffee Cup Handle", coffee, new Vector3(-0.32f, 0.88f, 0.17f),
+            new Vector3(0.045f, 0.075f, 0.035f), saucer);
+    }
+
+    private void DecorateSnackStation(Transform snacks)
+    {
+        Material label = CreateOfficeMaterial(new Color(0.96f, 0.87f, 0.64f), 0.12f);
+
+        CreateDeskPiece("Snack Bag Front Label", snacks, new Vector3(-0.23f, 0.86f, -0.164f),
+            new Vector3(0.105f, 0.045f, 0.012f), label);
+        CreateDeskPiece("Snack Box Front Label", snacks, new Vector3(0.23f, 0.86f, -0.164f),
+            new Vector3(0.105f, 0.045f, 0.012f), label);
     }
 
     private void CreateDeskPiece(string objectName, Transform desk, Vector3 localPosition,
