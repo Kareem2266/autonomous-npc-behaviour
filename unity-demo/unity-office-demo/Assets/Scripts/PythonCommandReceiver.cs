@@ -31,6 +31,7 @@ public class PythonCommandReceiver : MonoBehaviour
     private void Start()
     {
         agent = GetComponent<GridAgentController>();
+        CreateOfficeDecor();
         if (snackStationPrefab == null)
         {
             snackStationPrefab = Resources.Load<GameObject>("SnackStation");
@@ -88,6 +89,7 @@ public class PythonCommandReceiver : MonoBehaviour
                 new Vector3(-3.5f, 0f, -0.5f),
                 Quaternion.identity);
             spawnedDesk.name = "Desk at Desk Station";
+            DecorateDesk(spawnedDesk.transform);
             Debug.Log($"Desk spawned at {spawnedDesk.transform.position}");
         }
         else
@@ -121,6 +123,192 @@ public class PythonCommandReceiver : MonoBehaviour
         station.name = stationName;
         Debug.Log($"{stationName} spawned at {station.transform.position}");
         return station;
+    }
+
+    private void CreateOfficeDecor()
+    {
+        GameObject decorRoot = new GameObject("Office Finish Details");
+        Transform parent = decorRoot.transform;
+
+        Material teal = CreateOfficeMaterial(new Color(0.20f, 0.38f, 0.39f), 0.18f);
+        Material trim = CreateOfficeMaterial(new Color(0.87f, 0.82f, 0.70f), 0.15f);
+        Material frame = CreateOfficeMaterial(new Color(0.12f, 0.22f, 0.27f), 0.3f);
+        Material glass = CreateOfficeMaterial(new Color(0.42f, 0.67f, 0.72f), 0.72f);
+        Material signFace = CreateOfficeMaterial(new Color(0.16f, 0.28f, 0.31f), 0.22f);
+
+        Renderer floor = GameObject.Find("OfficeFloor")?.GetComponent<Renderer>();
+        if (floor != null)
+        {
+            floor.material.color = new Color(0.68f, 0.70f, 0.67f);
+        }
+
+        // Low wall panels and trim make the three-sided room feel finished
+        // while keeping the open front clear for the camera.
+        CreateOfficeCube("Back Wainscot", new Vector3(0f, 0.29f, 4.84f),
+            new Vector3(9.72f, 0.58f, 0.12f), teal, parent);
+        CreateOfficeCube("Left Wainscot", new Vector3(-4.84f, 0.29f, 0f),
+            new Vector3(0.12f, 0.58f, 9.72f), teal, parent);
+        CreateOfficeCube("Right Wainscot", new Vector3(4.84f, 0.29f, 0f),
+            new Vector3(0.12f, 0.58f, 9.72f), teal, parent);
+
+        CreateOfficeCube("Back Chair Rail", new Vector3(0f, 0.62f, 4.76f),
+            new Vector3(9.8f, 0.07f, 0.16f), trim, parent);
+        CreateOfficeCube("Left Chair Rail", new Vector3(-4.76f, 0.62f, 0f),
+            new Vector3(0.16f, 0.07f, 9.8f), trim, parent);
+        CreateOfficeCube("Right Chair Rail", new Vector3(4.76f, 0.62f, 0f),
+            new Vector3(0.16f, 0.07f, 9.8f), trim, parent);
+
+        // Two framed windows add depth and a daylight cue to the back wall.
+        CreateOfficeWindow(-2.65f, frame, glass, trim, parent);
+        CreateOfficeWindow(2.65f, frame, glass, trim, parent);
+
+        CreateOfficeCube("Office Sign Backing", new Vector3(0f, 1.76f, 4.78f),
+            new Vector3(2.35f, 0.40f, 0.10f), signFace, parent);
+        GameObject sign = new GameObject("Office Sign");
+        sign.transform.SetParent(parent, false);
+        sign.transform.position = new Vector3(0f, 1.76f, 4.71f);
+        sign.transform.rotation = Quaternion.identity;
+        TextMesh signText = sign.AddComponent<TextMesh>();
+        signText.text = "OFFICE";
+        signText.anchor = TextAnchor.MiddleCenter;
+        signText.alignment = TextAlignment.Center;
+        signText.fontSize = 100;
+        signText.characterSize = 0.13f;
+        signText.fontStyle = FontStyle.Bold;
+        signText.color = new Color(0.96f, 0.91f, 0.79f);
+
+        // Recolor the existing key light to a softer warm-neutral tone.
+        Light keyLight = FindAnyObjectByType<Light>();
+        if (keyLight != null && keyLight.type == LightType.Directional)
+        {
+            keyLight.color = new Color(1f, 0.94f, 0.84f);
+            keyLight.intensity = 1.35f;
+            keyLight.shadowStrength = 0.55f;
+        }
+    }
+
+    private void CreateOfficeWindow(float centerX, Material frame, Material glass,
+        Material trim, Transform parent)
+    {
+        const float centerY = 1.30f;
+        const float centerZ = 4.78f;
+        const float width = 2.05f;
+        const float height = 0.92f;
+        const float border = 0.09f;
+
+        CreateOfficeCube("Window Frame", new Vector3(centerX, centerY, centerZ),
+            new Vector3(width + border * 2f, height + border * 2f, 0.10f), frame, parent);
+        CreateOfficeCube("Window Glass", new Vector3(centerX, centerY, centerZ - 0.07f),
+            new Vector3(width, height, 0.025f), glass, parent);
+        CreateOfficeCube("Window Sill", new Vector3(centerX, centerY - height / 2f - 0.07f,
+            centerZ - 0.11f), new Vector3(width + border * 2.6f, 0.10f, 0.22f), trim, parent);
+        CreateOfficeCube("Window Center Bar", new Vector3(centerX, centerY, centerZ - 0.10f),
+            new Vector3(0.045f, height, 0.035f), trim, parent);
+        CreateOfficeCube("Window Crossbar", new Vector3(centerX, centerY, centerZ - 0.10f),
+            new Vector3(width, 0.045f, 0.035f), trim, parent);
+    }
+
+    private Material CreateOfficeMaterial(Color color, float smoothness)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Standard");
+        }
+
+        Material material = new Material(shader);
+        material.color = color;
+        if (material.HasProperty("_Smoothness"))
+        {
+            material.SetFloat("_Smoothness", smoothness);
+        }
+        return material;
+    }
+
+    private void CreateOfficeCube(string objectName, Vector3 position, Vector3 scale,
+        Material material, Transform parent)
+    {
+        GameObject piece = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        piece.name = objectName;
+        piece.transform.SetParent(parent, false);
+        piece.transform.position = position;
+        piece.transform.localScale = scale;
+        piece.GetComponent<Renderer>().sharedMaterial = material;
+        Destroy(piece.GetComponent<Collider>());
+    }
+
+    private void DecorateDesk(Transform desk)
+    {
+        Material charcoal = CreateOfficeMaterial(new Color(0.12f, 0.15f, 0.17f), 0.28f);
+        Material screen = CreateOfficeMaterial(new Color(0.18f, 0.43f, 0.50f), 0.48f);
+        Material chairFabric = CreateOfficeMaterial(new Color(0.16f, 0.29f, 0.32f), 0.18f);
+        Material paper = CreateOfficeMaterial(new Color(0.94f, 0.91f, 0.82f), 0.05f);
+        Material keycaps = CreateOfficeMaterial(new Color(0.55f, 0.58f, 0.55f), 0.12f);
+
+        // Monitor, stand, and keyboard sit on the existing desktop.
+        CreateDeskPiece("Monitor Base", desk, new Vector3(-0.10f, 0.80f, 0.15f),
+            new Vector3(0.22f, 0.025f, 0.12f), charcoal);
+        CreateDeskPiece("Monitor Stand", desk, new Vector3(-0.10f, 0.86f, 0.15f),
+            new Vector3(0.045f, 0.12f, 0.045f), charcoal);
+        CreateDeskPiece("Monitor", desk, new Vector3(-0.10f, 1.00f, 0.15f),
+            new Vector3(0.40f, 0.29f, 0.055f), charcoal);
+        CreateDeskPiece("Monitor Screen", desk, new Vector3(-0.10f, 1.00f, 0.118f),
+            new Vector3(0.35f, 0.235f, 0.012f), screen);
+        CreateDeskPiece("Keyboard", desk, new Vector3(0.02f, 0.81f, -0.12f),
+            new Vector3(0.34f, 0.035f, 0.13f), charcoal);
+
+        for (int row = 0; row < 3; row++)
+        {
+            for (int column = 0; column < 8; column++)
+            {
+                float keyX = -0.115f + column * 0.031f;
+                float keyZ = -0.163f + row * 0.034f;
+                CreateDeskPiece("Keyboard Key", desk,
+                    new Vector3(keyX, 0.833f, keyZ),
+                    new Vector3(0.023f, 0.008f, 0.020f), keycaps);
+            }
+        }
+
+        CreateDeskPiece("Paper Stack", desk, new Vector3(0.26f, 0.795f, 0.13f),
+            new Vector3(0.16f, 0.018f, 0.20f), paper);
+        CreateDeskPiece("Top Sheet", desk, new Vector3(0.245f, 0.808f, 0.12f),
+            new Vector3(0.15f, 0.008f, 0.18f), paper);
+
+        // Tuck a small chair under the camera-facing edge of the desk.
+        CreateDeskPiece("Chair Seat", desk, new Vector3(0f, 0.43f, -0.43f),
+            new Vector3(0.38f, 0.09f, 0.34f), chairFabric);
+        CreateDeskPiece("Chair Back", desk, new Vector3(0f, 0.72f, -0.62f),
+            new Vector3(0.38f, 0.48f, 0.08f), chairFabric);
+        CreateDeskPiece("Chair Stem", desk, new Vector3(0f, 0.23f, -0.43f),
+            new Vector3(0.07f, 0.33f, 0.07f), charcoal);
+        CreateDeskPiece("Chair Base Front Spoke", desk, new Vector3(0f, 0.06f, -0.59f),
+            new Vector3(0.05f, 0.035f, 0.27f), charcoal);
+        CreateDeskPiece("Chair Base Rear Spoke", desk, new Vector3(0f, 0.06f, -0.27f),
+            new Vector3(0.05f, 0.035f, 0.27f), charcoal);
+        CreateDeskPiece("Chair Base Left Spoke", desk, new Vector3(-0.16f, 0.06f, -0.43f),
+            new Vector3(0.27f, 0.035f, 0.05f), charcoal);
+        CreateDeskPiece("Chair Base Right Spoke", desk, new Vector3(0.16f, 0.06f, -0.43f),
+            new Vector3(0.27f, 0.035f, 0.05f), charcoal);
+        CreateDeskPiece("Chair Caster", desk, new Vector3(0f, 0.035f, -0.72f),
+            new Vector3(0.07f, 0.07f, 0.07f), charcoal);
+        CreateDeskPiece("Chair Caster", desk, new Vector3(0f, 0.035f, -0.14f),
+            new Vector3(0.07f, 0.07f, 0.07f), charcoal);
+        CreateDeskPiece("Chair Caster", desk, new Vector3(-0.29f, 0.035f, -0.43f),
+            new Vector3(0.07f, 0.07f, 0.07f), charcoal);
+        CreateDeskPiece("Chair Caster", desk, new Vector3(0.29f, 0.035f, -0.43f),
+            new Vector3(0.07f, 0.07f, 0.07f), charcoal);
+    }
+
+    private void CreateDeskPiece(string objectName, Transform desk, Vector3 localPosition,
+        Vector3 localScale, Material material)
+    {
+        GameObject piece = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        piece.name = objectName;
+        piece.transform.SetParent(desk, false);
+        piece.transform.localPosition = localPosition;
+        piece.transform.localScale = localScale;
+        piece.GetComponent<Renderer>().sharedMaterial = material;
+        Destroy(piece.GetComponent<Collider>());
     }
 
     private IEnumerator AnimatePickup(Transform[] items)
