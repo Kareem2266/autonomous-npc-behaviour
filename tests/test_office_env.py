@@ -204,7 +204,7 @@ def test_non_movement_actions_leave_agent_in_place(action):
     assert truncated is False
 
 
-def test_reaching_target_gives_reward_and_terminates_episode():
+def test_reaching_target_then_interacting_terminates_episode():
     environment = OfficeEnv(size=5)
     environment._agent_location = np.array([1, 1], dtype=np.int32)
     environment._target_location = np.array([2, 1], dtype=np.int32)
@@ -215,22 +215,37 @@ def test_reaching_target_gives_reward_and_terminates_episode():
     observation, reward, terminated, truncated, _ = environment.step(Action.EAST)
 
     np.testing.assert_array_equal(observation["agent"], [2, 1])
-    assert reward == pytest.approx(1.09)
+    np.testing.assert_array_equal(observation["target"], [2, 1])
+    assert reward == pytest.approx(0.09)
+    assert terminated is False
+    assert truncated is False
+
+    observation, reward, terminated, truncated, _ = environment.step(Action.INTERACT)
+
+    np.testing.assert_array_equal(observation["agent"], [2, 1])
+    assert reward == pytest.approx(0.99)
     assert terminated is True
     assert truncated is False
 
 
-def test_interacting_at_desk_picks_up_document_and_targets_printer():
-    environment = OfficeEnv(size=5)
-    environment._agent_location = environment._desk_location.copy()
-    environment._target_location = environment._desk_location.copy()
+def test_interacting_at_desk_targets_printer_approach_cell():
+    environment = OfficeEnv(size=10)
+    desk_approach = environment._station_approach_locations[
+        tuple(environment._desk_location)
+    ]
+    printer_approach = environment._station_approach_locations[
+        tuple(environment._printer_location)
+    ]
+    environment._agent_location = desk_approach.copy()
+    environment._target_location = desk_approach.copy()
+    environment._current_station_location = environment._desk_location.copy()
     environment._task_route = [environment._printer_location.copy()]
     environment._route_index = 0
 
     observation, reward, terminated, truncated, info = environment.step(Action.INTERACT)
 
-    np.testing.assert_array_equal(observation["agent"], environment._desk_location)
-    np.testing.assert_array_equal(observation["target"], environment._printer_location)
+    np.testing.assert_array_equal(observation["agent"], desk_approach)
+    np.testing.assert_array_equal(observation["target"], printer_approach)
     assert environment._carrying_document is True
     assert reward == pytest.approx(-0.01)
     assert terminated is False
@@ -246,7 +261,7 @@ def test_reaching_printer_with_document_ends_episode():
     environment._task_route = [environment._printer_location.copy()]
     environment._route_index = 0
 
-    observation, reward, terminated, truncated, info = environment.step(Action.WAIT)
+    observation, reward, terminated, truncated, info = environment.step(Action.INTERACT)
 
     np.testing.assert_array_equal(observation["agent"], environment._printer_location)
     assert reward == pytest.approx(0.99)
@@ -257,9 +272,14 @@ def test_reaching_printer_with_document_ends_episode():
 
 def test_reaching_intermediate_task_stop_updates_target_without_terminating():
     environment = OfficeEnv(size=10)
-    environment._agent_location = environment._snack_location.copy()
-    environment._target_location = environment._snack_location.copy()
+    environment._agent_location = environment._station_approach_locations[
+        tuple(environment._snack_location)
+    ].copy()
+    environment._target_location = environment._station_approach_locations[
+        tuple(environment._snack_location)
+    ].copy()
     environment._carrying_document = True
+    environment._current_station_location = environment._snack_location.copy()
     environment._task_route = [
         environment._snack_location.copy(),
         environment._coffee_location.copy(),
@@ -267,18 +287,46 @@ def test_reaching_intermediate_task_stop_updates_target_without_terminating():
     ]
     environment._route_index = 0
 
-    observation, _, terminated, truncated, _ = environment.step(Action.WAIT)
+    observation, _, terminated, truncated, _ = environment.step(Action.INTERACT)
 
-    np.testing.assert_array_equal(observation["target"], environment._coffee_location)
+    np.testing.assert_array_equal(
+        observation["target"],
+        environment._station_approach_locations[tuple(environment._coffee_location)],
+    )
+    np.testing.assert_array_equal(
+        environment._current_station_location,
+        environment._coffee_location,
+    )
     assert environment._route_index == 1
     assert terminated is False
     assert truncated is False
 
 
-def test_reset_chooses_a_valid_task_route_and_keeps_obstacles_off_stations():
+def test_station_tiles_are_blocked_and_approach_tiles_are_walkable():
+    environment = OfficeEnv(size=10)
+    snack = environment._snack_location
+    snack_approach = environment._station_approach_locations[tuple(snack)]
+    environment._agent_location = snack_approach.copy()
+    environment._target_location = np.array([9, 9], dtype=np.int32)
+
+    assert not environment.action_masks()[Action.EAST]
+
+    observation, reward, terminated, truncated, _ = environment.step(Action.EAST)
+
+    np.testing.assert_array_equal(observation["agent"], snack_approach)
+    assert reward == pytest.approx(-0.21)
+    assert terminated is False
+    assert truncated is False
+
+    environment._agent_location = np.array([1, 2], dtype=np.int32)
+    environment._target_location = snack_approach.copy()
+    assert environment.action_masks()[Action.EAST]
+
+
+def test_reset_chooses_a_valid_route_and_keeps_obstacles_off_stations_and_approaches():
     environment = OfficeEnv(size=10)
 
-    environment.reset(seed=42)
+    observation, _ = environment.reset(seed=42)
 
     valid_routes = [
         [tuple(environment._printer_location), tuple(environment._desk_location)],
@@ -299,11 +347,19 @@ def test_reset_chooses_a_valid_task_route_and_keeps_obstacles_off_stations():
         tuple(environment._snack_location),
         tuple(environment._coffee_location),
     }
+    approach_cells = {
+        tuple(location)
+        for location in environment._station_approach_locations.values()
+    }
     obstacle_cells = {tuple(location) for location in environment._obstacle_locations}
 
     assert selected_route in valid_routes
     assert environment._route_index == 0
-    assert obstacle_cells.isdisjoint(stations)
+    assert tuple(observation["target"]) == tuple(
+        environment._station_approach_locations[tuple(environment._desk_location)]
+    )
+    assert obstacle_cells.isdisjoint(stations | approach_cells)
+    assert tuple(observation["agent"]) not in stations | approach_cells
 
 
 def test_rgb_array_render_uses_xy_coordinates_and_returns_height_width_channels():
