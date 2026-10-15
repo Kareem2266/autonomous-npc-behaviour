@@ -51,9 +51,20 @@ class OfficeEnv(gym.Env):
             self._bathroom_location = np.array([8, 8], dtype=np.int32)
             self._snack_location = np.array([3, 2], dtype=np.int32)
             self._coffee_location = np.array([3, 8], dtype=np.int32)
+
+            self._station_approach_locations = {
+                tuple(self._desk_location): np.array([2, 5], dtype=np.int32),
+                tuple(self._printer_location): np.array([7, 2], dtype=np.int32),
+                tuple(self._bathroom_location): np.array([7, 8], dtype=np.int32),
+                tuple(self._snack_location): np.array([2, 2], dtype=np.int32),
+                tuple(self._coffee_location): np.array([2, 8], dtype=np.int32),
+            }
+
         else:
             self._desk_location = np.array([0, size // 2], dtype=np.int32)
             self._printer_location = np.array([size - 1, (size -1) // 2], dtype=np.int32)
+            self._station_approach_locations = {}
+
         self._carrying_document = False
         self._task_route = []
         self._route_index = 0
@@ -77,6 +88,10 @@ class OfficeEnv(gym.Env):
             Action.WEST : np.array([-1,0])
         }
 
+    def _approach_for_station(self, station):
+        approach = self._station_approach_locations.get(tuple(station),station)
+        return approach.copy()
+
     # Using this to get environement internal state
     def _get_obs(self):
         return {"agent": self._agent_location,
@@ -84,10 +99,14 @@ class OfficeEnv(gym.Env):
                 "target": self._target_location,
                 "obstacle": self._obstacle_locations}
 
-    def _get_path_distance(self):
-        start = tuple(self._agent_location)
+    def _get_path_distance(self, start_location=None):
+        start = tuple(
+            self._agent_location if start_location is None else start_location
+        )
+
         target = tuple(self._target_location)
-        obstacles = {tuple(position) for position in self._obstacle_locations}
+        blocked_cells = {tuple(position) for position in self._obstacle_locations}
+        blocked_cells.update(self._station_approach_locations.keys())
         queue = deque([(start,0)])
         visited = {start}
 
@@ -102,7 +121,7 @@ class OfficeEnv(gym.Env):
                     continue
 
                 next_cell = tuple(next_position)
-                if next_cell in obstacles or next_cell in visited:
+                if next_cell in blocked_cells or next_cell in visited:
                     continue
 
                 visited.add(next_cell)
@@ -131,6 +150,7 @@ class OfficeEnv(gym.Env):
 
         self._task_route = task_routes[self.np_random.integers(len(task_routes))]
         self._route_index = 0
+        self._current_station_location = self._desk_location.copy()
 
         all_cells = [
             (x, y)
@@ -149,8 +169,14 @@ class OfficeEnv(gym.Env):
             reserved_cells = {
                 tuple(self._desk_location),
                 tuple(self._printer_location),
-
             }
+
+        reserved_cells.update(
+            tuple(approach)
+            for approach in self._station_approach_locations.values()
+        )
+
+
         obstacle_candidates = [
             cell for cell in all_cells if cell not in reserved_cells
         ]
@@ -169,9 +195,10 @@ class OfficeEnv(gym.Env):
 
             # Keep layouts where every leg of the selected task route is open.
             route_stops = [self._desk_location, *self._task_route]
+            approach_stops = [self._approach_for_station(stop) for stop in route_stops]
             route_reachable = True
 
-            for start, target in zip(route_stops, route_stops[1:]):
+            for start, target in zip(approach_stops, approach_stops[1:]):
                 self._agent_location = start.copy()
                 self._target_location = target.copy()
                 if not np.isfinite(self._get_path_distance()):
@@ -188,7 +215,7 @@ class OfficeEnv(gym.Env):
                     continue
 
                 self._agent_location = np.asarray(cell, dtype=np.int32)
-                self._target_location = self._desk_location.copy()
+                self._target_location = self._approach_for_station(self._desk_location)
                 if np.isfinite(self._get_path_distance()):
                     reachable_starts.append(cell)
 
@@ -205,7 +232,8 @@ class OfficeEnv(gym.Env):
 
 
         self._previous_agent_location = self._agent_location.copy()
-        self._target_location = self._desk_location.copy()
+        self._current_station_location = self._desk_location.copy()
+        self._target_location = self._approach_for_station(self._desk_location)
 
         observation = self._get_obs()
         info = self._get_info()
@@ -225,14 +253,33 @@ class OfficeEnv(gym.Env):
                 np.array_equal(next_location, obstacle)
                 for obstacle in self._obstacle_locations
             )
-            if outside_grid or hits_obstacle:
+            hits_station = tuple(next_location) in self._station_approach_locations
+            if outside_grid or hits_obstacle or hits_station:
+                mask[action] = False
+            elif not outside_grid and not hits_obstacle and not hits_station:
+                current_distance = self._get_path_distance()
+                next_distance = self._get_path_distance(next_location)
+                if next_distance >= current_distance:
+                    mask[action] = False
+
+        at_target = np.array_equal(self._agent_location, self._target_location)
+        if at_target:
+            # Stop on each target and require an explicit interaction before
+            # the route can continue.
+            for action in self._action_to_direction:
                 mask[action] = False
 
-        mask[Action.INTERACT] = (
-            not self._carrying_document
-            and np.array_equal(self._agent_location, self._desk_location)
-            and np.array_equal(self._target_location, self._desk_location)
-        )
+        if self._carrying_document:
+            mask[Action.INTERACT] = at_target
+        else:
+            mask[Action.INTERACT] = (
+                at_target
+                and np.array_equal(
+                    self._current_station_location,
+                    self._desk_location,
+                )
+            )
+
         mask[Action.WAIT] = False
 
         return mask
@@ -255,26 +302,45 @@ class OfficeEnv(gym.Env):
 
         reversed_step = not np.array_equal(proposed_location, self._agent_location) and np.array_equal(proposed_location, self._previous_agent_location)
 
-        hit_obstacle = any(np.array_equal(proposed_location, obstacle) for obstacle in self._obstacle_locations)
+        hit_obstacle = (
+            any(
+                np.array_equal(proposed_location, obstacle)
+                for obstacle in self._obstacle_locations
+            )
+            or tuple(proposed_location) in self._station_approach_locations
+        )
+
         if not hit_obstacle and not np.array_equal(proposed_location, self._agent_location):
             self._previous_agent_location = self._agent_location.copy()
             self._agent_location = proposed_location
 
         new_distance = self._get_info()["distance"]
 
-        # Check if it reached the target
+        # Reaching a target only gets the agent there. The route advances on
+        # INTERACT, so station visits are represented in the environment.
         terminated = False
 
-        if np.array_equal(self._agent_location, self._target_location):
-            if not self._carrying_document and action == Action.INTERACT:
+        if (
+            action == Action.INTERACT
+            and np.array_equal(self._agent_location, self._target_location)
+        ):
+            if (
+                not self._carrying_document
+                and np.array_equal(
+                   self._current_station_location,
+                    self._desk_location,
+                )
+            ):
                 self._carrying_document = True
-                self._target_location = self._task_route[self._route_index].copy()
+                self._current_station_location = self._task_route[self._route_index].copy()
+                self._target_location = self._approach_for_station(self._current_station_location)
             elif self._carrying_document:
                 self._route_index += 1
                 if self._route_index == len(self._task_route):
                     terminated = True
                 else:
-                    self._target_location = self._task_route[self._route_index].copy()
+                    self._current_station_location = self._task_route[self._route_index].copy()
+                    self._target_location = self._approach_for_station(self._current_station_location)
 
 
         difference = old_distance - new_distance
