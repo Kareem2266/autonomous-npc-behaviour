@@ -24,6 +24,10 @@ public class PythonCommandReceiver : MonoBehaviour
     private Transform[] coffeeCupParts = Array.Empty<Transform>();
     private Transform printedPaper;
     private Transform bathroomStation;
+    private Transform deskStation;
+    private Transform printerStation;
+    private Transform snackStationTransform;
+    private Transform coffeeStationTransform;
     private Vector3 printerPaperStart;
     private Vector3 printerPaperEnd;
     private bool hasReceivedInitialState;
@@ -58,6 +62,7 @@ public class PythonCommandReceiver : MonoBehaviour
             snackStationPrefab, "Snack Area", new Vector3(-1.5f, 0f, 2.5f));
         if (snackStation != null)
         {
+            snackStationTransform = snackStation.transform;
             DecorateSnackStation(snackStation.transform);
             snackItem = snackStation.transform.Find("Snack Bag");
         }
@@ -66,6 +71,7 @@ public class PythonCommandReceiver : MonoBehaviour
             coffeeStationPrefab, "Coffee Area", new Vector3(-1.5f, 0f, -3.5f));
         if (coffeeStation != null)
         {
+            coffeeStationTransform = coffeeStation.transform;
             DecorateCoffeeStation(coffeeStation.transform);
             coffeeCupParts = new[]
             {
@@ -77,6 +83,7 @@ public class PythonCommandReceiver : MonoBehaviour
             printerStationPrefab, "Printer", new Vector3(3.5f, 0f, 2.5f));
         if (printerStation != null)
         {
+            this.printerStation = printerStation.transform;
             DecoratePrinterStation(printerStation.transform);
             printedPaper = printerStation.transform.Find("Printed Paper");
             if (printedPaper != null)
@@ -92,6 +99,7 @@ public class PythonCommandReceiver : MonoBehaviour
                 new Vector3(-3.5f, 0f, -0.5f),
                 Quaternion.identity);
             spawnedDesk.name = "Desk at Desk Station";
+            deskStation = spawnedDesk.transform;
             DecorateDesk(spawnedDesk.transform);
             Debug.Log($"Desk spawned at {spawnedDesk.transform.position}");
         }
@@ -497,6 +505,11 @@ public class PythonCommandReceiver : MonoBehaviour
             if (line.StartsWith("INTERACTION:")) {
                 string interaction = line.Substring("INTERACTION:".Length);
                 Debug.Log($"Station interaction: {interaction}");
+                Transform interactingStation = GetStationForInteraction(interaction);
+                if (interactingStation != null)
+                {
+                    agent.FaceTargetDuringInteraction(interactingStation);
+                }
                 if (interaction.IndexOf("snack", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     StartCoroutine(AnimatePickup(new[] { snackItem }));
@@ -551,6 +564,31 @@ public class PythonCommandReceiver : MonoBehaviour
                 0.4f,
                 4.5f - obstacleTwoY);
         }
+    }
+
+    private Transform GetStationForInteraction(string interaction)
+    {
+        if (interaction.IndexOf("printer", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return printerStation;
+        }
+        if (interaction.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return bathroomStation;
+        }
+        if (interaction.IndexOf("snack", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return snackStationTransform;
+        }
+        if (interaction.IndexOf("coffee", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return coffeeStationTransform;
+        }
+        if (interaction.IndexOf("desk", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return deskStation;
+        }
+        return null;
     }
 
     private IEnumerator AnimateBathroomJump()
