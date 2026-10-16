@@ -3,30 +3,36 @@ using UnityEngine;
 
 public class GridAgentController : MonoBehaviour
 {
-    // Temporary comment: remove after Unity refreshes this script.
     [SerializeField] private float moveSpeed = 2f;
-    [SerializeField] private float walkCycleLength = 1.1f;
-    [SerializeField] private float legSwingAngle = 28f;
-    [SerializeField] private float armSwingAngle = 22f;
+    [SerializeField] private float walkCycleLength = 1.25f;
+    [SerializeField] private float legSwingDegrees = 12f;
+    [SerializeField] private float armSwingDegrees = 8f;
 
     private Vector3 destination;
     private float gaitPhase;
+    private bool isWalking;
     private Renderer[] agentRenderers;
     private Transform characterVisualRoot;
-    private Transform leftLegPivot;
-    private Transform rightLegPivot;
-    private Transform leftArmPivot;
-    private Transform rightArmPivot;
     private Transform interactionTarget;
     private bool isInteracting;
+
+    private Transform leftUpperLeg;
+    private Transform rightUpperLeg;
+    private Transform leftUpperArm;
+    private Transform rightUpperArm;
+    private Transform leftLowerArm;
+    private Transform rightLowerArm;
+    private Quaternion leftUpperLegRestRotation;
+    private Quaternion rightUpperLegRestRotation;
+    private Quaternion leftUpperArmRestRotation;
+    private Quaternion rightUpperArmRestRotation;
 
     private void Start()
     {
         destination = transform.position;
 
         // Keep the grid-controlled Agent as an invisible movement root.
-        Renderer[] existingRenderers = GetComponentsInChildren<Renderer>(true);
-        foreach (Renderer existingRenderer in existingRenderers)
+        foreach (Renderer existingRenderer in GetComponentsInChildren<Renderer>(true))
         {
             existingRenderer.enabled = false;
         }
@@ -43,42 +49,46 @@ public class GridAgentController : MonoBehaviour
             oldBody.gameObject.SetActive(false);
         }
 
-        GameObject characterAsset = Resources.Load<GameObject>("MiiCharacter");
-        if (characterAsset == null)
+        GameObject officeWorkerPrefab = Resources.Load<GameObject>("OfficeWorker");
+        if (officeWorkerPrefab == null)
         {
-            Debug.LogError("MiiCharacter.obj was not imported from Assets/Resources.", this);
+            Debug.LogError("OfficeWorker.prefab was not found in Assets/Resources.", this);
             agentRenderers = new Renderer[0];
             return;
         }
 
-        characterVisualRoot = new GameObject("Mii Character").transform;
+        characterVisualRoot = new GameObject("Office Worker Visual").transform;
         characterVisualRoot.SetParent(transform, false);
-        characterVisualRoot.localPosition = new Vector3(0f, -0.45f, 0f);
+        // The grid root is centered half a unit above the floor; the imported
+        // character's pivot is at its feet, so offset it back down to floor level.
+        characterVisualRoot.localPosition = new Vector3(0f, -0.5f, 0f);
         characterVisualRoot.localRotation = Quaternion.identity;
 
-        GameObject character = Instantiate(characterAsset, characterVisualRoot, false);
-        character.name = "Mii Character Mesh";
+        GameObject character = Instantiate(officeWorkerPrefab, characterVisualRoot, false);
+        character.name = "Office Worker";
 
-        GameObject legAsset = Resources.Load<GameObject>("MiiLeg");
-        if (legAsset == null)
+        Animator animator = character.GetComponentInChildren<Animator>();
+        if (animator != null && animator.avatar != null && animator.avatar.isHuman)
         {
-            Debug.LogError("MiiLeg.obj was not imported from Assets/Resources.", this);
+            animator.applyRootMotion = false;
+            // Use the imported bind pose as the idle pose. The pack has no
+            // animation clips, so animate the humanoid bones directly below.
+            animator.enabled = false;
+            leftUpperLeg = animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+            rightUpperLeg = animator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+            leftUpperArm = animator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
+            rightUpperArm = animator.GetBoneTransform(HumanBodyBones.RightUpperArm);
+            leftLowerArm = animator.GetBoneTransform(HumanBodyBones.LeftLowerArm);
+            rightLowerArm = animator.GetBoneTransform(HumanBodyBones.RightLowerArm);
+
+            if (leftUpperLeg != null) leftUpperLegRestRotation = leftUpperLeg.localRotation;
+            if (rightUpperLeg != null) rightUpperLegRestRotation = rightUpperLeg.localRotation;
+            if (leftUpperArm != null) leftUpperArmRestRotation = leftUpperArm.localRotation;
+            if (rightUpperArm != null) rightUpperArmRestRotation = rightUpperArm.localRotation;
         }
         else
         {
-            leftLegPivot = CreateLegPivot("Left Leg Pivot", -0.12f, legAsset);
-            rightLegPivot = CreateLegPivot("Right Leg Pivot", 0.12f, legAsset);
-        }
-
-        GameObject armAsset = Resources.Load<GameObject>("MiiArm");
-        if (armAsset == null)
-        {
-            Debug.LogError("MiiArm.obj was not imported from Assets/Resources.", this);
-        }
-        else
-        {
-            leftArmPivot = CreateArmPivot("Left Arm Pivot", -0.28f, armAsset);
-            rightArmPivot = CreateArmPivot("Right Arm Pivot", 0.28f, armAsset);
+            Debug.LogError("OfficeWorker needs a valid Humanoid Avatar to animate.", character);
         }
 
         agentRenderers = GetComponentsInChildren<Renderer>(true);
@@ -96,72 +106,84 @@ public class GridAgentController : MonoBehaviour
         float movedDistance = Vector3.Distance(previousPosition, transform.position);
         if (movedDistance > 0.0001f)
         {
-            // Advance the gait by distance, so each stride cycles forward and back
-            // consistently even when the NPC pauses or changes direction.
-            float safeCycleLength = Mathf.Max(0.1f, walkCycleLength);
-            gaitPhase += movedDistance * (Mathf.PI * 2f / safeCycleLength);
+            gaitPhase += movedDistance * (Mathf.PI * 2f / Mathf.Max(0.1f, walkCycleLength));
         }
 
-        bool isWalking = (transform.position - destination).sqrMagnitude > 0.0001f;
+        isWalking = (transform.position - destination).sqrMagnitude > 0.0001f;
         Vector3 facingDirection = isWalking
             ? destination - transform.position
             : isInteracting && interactionTarget != null
                 ? interactionTarget.position - transform.position
                 : Vector3.zero;
         facingDirection.y = 0f;
+
         if (characterVisualRoot != null && facingDirection.sqrMagnitude > 0.0001f)
         {
-            // The imported model faces local -Z, so negate the look direction
-            // for Unity's +Z-facing LookRotation convention.
-            Quaternion facing = Quaternion.LookRotation(-facingDirection.normalized);
+            Quaternion facing = Quaternion.LookRotation(facingDirection.normalized);
             characterVisualRoot.localRotation = Quaternion.Slerp(
                 characterVisualRoot.localRotation,
                 facing,
                 8f * Time.deltaTime
             );
         }
-
-        float swing = isWalking ? Mathf.Sin(gaitPhase) * legSwingAngle : 0f;
-        AnimateLimb(leftLegPivot, swing);
-        AnimateLimb(rightLegPivot, -swing);
-        float armSwing = isWalking ? Mathf.Sin(gaitPhase) * armSwingAngle : 0f;
-        AnimateLimb(leftArmPivot, -armSwing);
-        AnimateLimb(rightArmPivot, armSwing);
     }
 
-    private Transform CreateLegPivot(string pivotName, float xPosition, GameObject legAsset)
+    private void LateUpdate()
     {
-        Transform pivot = new GameObject(pivotName).transform;
-        pivot.SetParent(characterVisualRoot, false);
-        pivot.localPosition = new Vector3(xPosition, 0.52f, 0f);
-        GameObject leg = Instantiate(legAsset, pivot, false);
-        leg.name = pivotName.Replace(" Pivot", " Mesh");
-        return pivot;
-    }
-
-    private Transform CreateArmPivot(string pivotName, float xPosition, GameObject armAsset)
-    {
-        Transform pivot = new GameObject(pivotName).transform;
-        pivot.SetParent(characterVisualRoot, false);
-        pivot.localPosition = new Vector3(xPosition, 0.99f, 0f);
-        GameObject arm = Instantiate(armAsset, pivot, false);
-        arm.name = pivotName.Replace(" Pivot", " Mesh");
-        return pivot;
-    }
-
-    private void AnimateLimb(Transform legPivot, float angle)
-    {
-        if (legPivot == null)
+        if (characterVisualRoot == null)
         {
             return;
         }
 
-        Quaternion targetRotation = Quaternion.Euler(angle, 0f, 0f);
-        legPivot.localRotation = Quaternion.Slerp(
-            legPivot.localRotation,
-            targetRotation,
-            12f * Time.deltaTime
-        );
+        float stride = isWalking ? Mathf.Sin(gaitPhase) : 0f;
+        Vector3 characterRight = characterVisualRoot.right;
+
+        // Reset to the imported rest pose each frame, then add only a small
+        // forward/back swing while walking. At rest, the legs stay straight.
+        if (leftUpperLeg != null)
+        {
+            leftUpperLeg.localRotation = leftUpperLegRestRotation;
+            leftUpperLeg.rotation = Quaternion.AngleAxis(
+                stride * legSwingDegrees,
+                characterRight
+            ) * leftUpperLeg.rotation;
+        }
+        if (rightUpperLeg != null)
+        {
+            rightUpperLeg.localRotation = rightUpperLegRestRotation;
+            rightUpperLeg.rotation = Quaternion.AngleAxis(
+                -stride * legSwingDegrees,
+                characterRight
+            ) * rightUpperLeg.rotation;
+        }
+
+        PoseArm(leftUpperArm, leftLowerArm, leftUpperArmRestRotation, -1f, stride);
+        PoseArm(rightUpperArm, rightLowerArm, rightUpperArmRestRotation, 1f, -stride);
+    }
+
+    private void PoseArm(
+        Transform upperArm,
+        Transform lowerArm,
+        Quaternion restRotation,
+        float side,
+        float stride
+    )
+    {
+        if (upperArm == null || lowerArm == null)
+        {
+            return;
+        }
+
+        upperArm.localRotation = restRotation;
+        Vector3 currentArmDirection = (lowerArm.position - upperArm.position).normalized;
+        Vector3 outward = characterVisualRoot.right * side;
+        Vector3 relaxedDirection = (Vector3.down * 0.995f + outward * 0.05f).normalized;
+        upperArm.rotation = Quaternion.FromToRotation(currentArmDirection, relaxedDirection)
+            * upperArm.rotation;
+        upperArm.rotation = Quaternion.AngleAxis(
+            stride * armSwingDegrees,
+            characterVisualRoot.right
+        ) * upperArm.rotation;
     }
 
     public IEnumerator PlayBathroomBreak()
