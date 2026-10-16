@@ -1,6 +1,7 @@
 from enum import IntEnum
 from typing import Optional
 from collections import deque
+from dataclasses import dataclass
 import numpy as np
 import gymnasium as gym
 import pygame
@@ -13,6 +14,16 @@ class Action(IntEnum):
     WEST = 3
     INTERACT = 4
     WAIT = 5
+
+@dataclass
+class AgentState:
+    location: np.ndarray
+    previous_location: np.ndarray
+    target_location: np.ndarray
+    current_station_location: np.ndarray
+    task_route: list[np.ndarray]
+    route_index: int = 0
+    carrying_document: bool = False
 
 class OfficeEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -38,12 +49,21 @@ class OfficeEnv(gym.Env):
         self.clock = None
 
         # Initialize positions, will be randmsly set in reset (-1 is unitialized state for now)
-        self._agent_location = np.array([-1,-1], dtype=np.int32)
-        self._target_location = np.array([-1,-1], dtype=np.int32)
+        self._agent_states = [
+            AgentState(
+                location=np.array([-1, -1], dtype=np.int32),
+                previous_location=np.array([-1, -1], dtype=np.int32),
+                target_location=np.array([-1, -1], dtype=np.int32),
+                current_station_location=np.array([-1, -1], dtype=np.int32),
+                task_route=[],
+                )
+            ]
+        self._active_agent_index = 0
+
         self._obstacle_locations = np.array(
             [[size // 2, size // 2], [size // 2, (size // 2 + 1) % size]],
-            dtype=np.int32)
-        self._previous_agent_location = np.array([-1, -1], dtype=np.int32)
+            dtype=np.int32,
+        )
         
         if size == 10:
             self._desk_location = np.array([1, 5], dtype=np.int32)
@@ -87,6 +107,62 @@ class OfficeEnv(gym.Env):
             Action.SOUTH : np.array([0,1]),
             Action.WEST : np.array([-1,0])
         }
+
+    @property
+    def _agent_location(self):
+        return self._agent_states[self._active_agent_index].location
+
+    @_agent_location.setter
+    def _agent_location(self, value):
+        self._agent_states[self._active_agent_index].location = value
+
+    @property
+    def _previous_agent_location(self):
+        return self._agent_states[self._active_agent_index].previous_location
+
+    @_previous_agent_location.setter
+    def _previous_agent_location(self, value):
+        self._agent_states[self._active_agent_index].previous_location = value
+
+    @property
+    def _target_location(self):
+        return self._agent_states[self._active_agent_index].target_location
+
+    @_target_location.setter
+    def _target_location(self, value):
+        self._agent_states[self._active_agent_index].target_location = value
+
+    @property
+    def _current_station_location(self):
+        return self._agent_states[self._active_agent_index].current_station_location
+
+    @_current_station_location.setter
+    def _current_station_location(self, value):
+        self._agent_states[self._active_agent_index].current_station_location = value
+
+    @property
+    def _task_route(self):
+        return self._agent_states[self._active_agent_index].task_route
+
+    @_task_route.setter
+    def _task_route(self, value):
+        self._agent_states[self._active_agent_index].task_route = value
+
+    @property
+    def _route_index(self):
+        return self._agent_states[self._active_agent_index].route_index
+
+    @_route_index.setter
+    def _route_index(self, value):
+        self._agent_states[self._active_agent_index].route_index = value
+
+    @property
+    def _carrying_document(self):
+        return self._agent_states[self._active_agent_index].carrying_document
+
+    @_carrying_document.setter
+    def _carrying_document(self, value):
+        self._agent_states[self._active_agent_index].carrying_document = value
 
     def _approach_for_station(self, station):
         approach = self._station_approach_locations.get(tuple(station),station)
