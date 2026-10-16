@@ -17,6 +17,7 @@ class Action(IntEnum):
 
 @dataclass
 class AgentState:
+    agent_id: str
     location: np.ndarray
     previous_location: np.ndarray
     target_location: np.ndarray
@@ -24,6 +25,16 @@ class AgentState:
     task_route: list[np.ndarray]
     route_index: int = 0
     carrying_document: bool = False
+
+@dataclass(frozen=True)
+class AgentConfig:
+    agent_id: str
+    task_route: tuple[str,...]
+
+DEFAULT_AGENT_CONFIGS = (
+    AgentConfig("worker_1", ("printer", "snack", "desk")),
+    AgentConfig("worker_2", ("coffee", "bathroom", "desk")),
+)
 
 class OfficeEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -33,6 +44,7 @@ class OfficeEnv(gym.Env):
         size: int = 10,
         render_mode: Optional[str] = None,
         window_size: int = 512,
+        agent_configs: tuple[AgentConfig,...] | None = None,
     ):
         super().__init__()
         if size < 2:
@@ -47,18 +59,6 @@ class OfficeEnv(gym.Env):
         self.window_size = window_size
         self.window = None
         self.clock = None
-
-        # Initialize positions, will be randmsly set in reset (-1 is unitialized state for now)
-        self._agent_states = [
-            AgentState(
-                location=np.array([-1, -1], dtype=np.int32),
-                previous_location=np.array([-1, -1], dtype=np.int32),
-                target_location=np.array([-1, -1], dtype=np.int32),
-                current_station_location=np.array([-1, -1], dtype=np.int32),
-                task_route=[],
-                )
-            ]
-        self._active_agent_index = 0
 
         self._obstacle_locations = np.array(
             [[size // 2, size // 2], [size // 2, (size // 2 + 1) % size]],
@@ -85,9 +85,60 @@ class OfficeEnv(gym.Env):
             self._printer_location = np.array([size - 1, (size -1) // 2], dtype=np.int32)
             self._station_approach_locations = {}
 
-        self._carrying_document = False
-        self._task_route = []
-        self._route_index = 0
+        self._station_locations = {
+            "desk": self._desk_location,
+            "printer": self._printer_location
+        }
+
+        if size == 10:
+            self._station_locations.update({
+                "bathroom": self._bathroom_location,
+                "snack": self._snack_location,
+                "coffee": self._coffee_location,
+            })
+
+        self._agent_configs = (
+            None if agent_configs is None else tuple(agent_configs)
+        )
+
+        if self._agent_configs is not None:
+            agent_ids = [
+                agent_config.agent_id for agent_config in self._agent_configs
+            ]
+            if len(agent_ids) != len(set(agent_ids)):
+                raise ValueError("Agent IDs must be unique.")
+
+            for agent_config in self._agent_configs:
+                unknown_stations = (
+                    set(agent_config.task_route) - set(self._station_locations)
+                )
+                if unknown_stations:
+                    raise ValueError(
+                        f"Unknown stations for {agent_config.agent_id}: "
+                        f"{sorted(unknown_stations)}"
+                    )
+
+        if self._agent_configs is not None and not self._agent_configs:
+            raise ValueError("At least one agent config is required.")
+
+        state_configs = self._agent_configs
+        if state_configs is None:
+            state_configs = (AgentConfig("worker_1", ()),)
+
+        self._agent_states = []
+        for agent_config in state_configs:
+            self._agent_states.append(
+                AgentState(
+                    agent_id=agent_config.agent_id,
+                    location=np.array([-1, -1], dtype=np.int32),
+                    previous_location=np.array([-1, -1], dtype=np.int32),
+                    target_location=np.array([-1, -1], dtype=np.int32),
+                    current_station_location=np.array([-1, -1], dtype=np.int32),
+                    task_route=self._location_for_route(agent_config.task_route),
+                )
+            )
+
+        self._active_agent_index = 0
 
         # Defining what agent can observe
         self.observation_space = gym.spaces.Dict(
@@ -168,6 +219,12 @@ class OfficeEnv(gym.Env):
         approach = self._station_approach_locations.get(tuple(station),station)
         return approach.copy()
 
+    def _location_for_route(self, route):
+        locations = []
+        for name in route:
+            locations.append(self._station_locations[name].copy())
+        return locations
+
     # Using this to get environement internal state
     def _get_obs(self):
         return {"agent": self._agent_location,
@@ -211,22 +268,38 @@ class OfficeEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # seed self.np_random
         super().reset(seed=seed)
-        self._carrying_document = False
 
-        if self.size == 10:
-            task_routes = [
-                [self._printer_location, self._desk_location],
-                [self._bathroom_location, self._desk_location],
-                [self._snack_location, self._coffee_location, self._desk_location],
-                [self._snack_location, self._desk_location],
-                [self._coffee_location, self._desk_location],
+        self._active_agent_index = 0
+
+        if self._agent_configs is None:
+            if self.size == 10:
+                task_routes = [
+                    [self._printer_location, self._desk_location],
+                    [self._bathroom_location, self._desk_location],
+                    [self._snack_location, self._coffee_location, self._desk_location],
+                    [self._snack_location, self._desk_location],
+                    [self._coffee_location, self._desk_location],
+                  ]
+            else:
+                task_routes = [[self._printer_location]]
+
+            self._agent_states[0].task_route = task_routes[
+                self.np_random.integers(len(task_routes))
             ]
         else:
-            task_routes = [[self._printer_location]]
-
-        self._task_route = task_routes[self.np_random.integers(len(task_routes))]
-        self._route_index = 0
-        self._current_station_location = self._desk_location.copy()
+            for agent_config, agent_state in zip(
+                self._agent_configs, self._agent_states
+            ):
+                agent_state.task_route = self._location_for_route(
+                    agent_config.task_route
+                )
+        for agent_state in self._agent_states:
+            agent_state.carrying_document = False
+            agent_state.route_index = 0
+            agent_state.current_station_location = self._desk_location.copy()
+            agent_state.target_location = self._approach_for_station(
+                self._desk_location
+            )
 
         all_cells = [
             (x, y)
