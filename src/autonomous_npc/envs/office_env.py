@@ -555,6 +555,161 @@ class OfficeEnv(gym.Env):
 
         return mask
 
+    def step_simultaneous(self, actions):
+        """Apply one action per agent from the same pre-move state."""
+        actions = np.asarray(actions, dtype=np.int64).reshape(-1)
+        agent_count = len(self._agent_states)
+        if actions.shape != (agent_count,):
+            raise ValueError(
+                f"Expected {agent_count} actions, received {len(actions)}."
+            )
+        if np.any(actions < 0) or np.any(actions >= self.action_space.n):
+            raise ValueError("Every action must be a valid Action value.")
+
+        previous_active_agent_index = self._active_agent_index
+        old_locations = [agent.location.copy() for agent in self._agent_states]
+        old_previous_locations = [
+            agent.previous_location.copy() for agent in self._agent_states
+        ]
+        old_finished = [agent.finished for agent in self._agent_states]
+        active_agent_count = sum(not agent.finished for agent in self._agent_states)
+        old_distances = []
+        action_masks = []
+        for agent_index in range(agent_count):
+            self._active_agent_index = agent_index
+            old_distances.append(self._get_path_distance())
+            action_masks.append(self.action_masks())
+
+        proposed_locations = [location.copy() for location in old_locations]
+        hit_obstacles = [False] * agent_count
+        valid_actions = [False] * agent_count
+
+        for agent_index, action_value in enumerate(actions):
+            agent = self._agent_states[agent_index]
+            action = Action(int(action_value))
+            valid_actions[agent_index] = action_masks[agent_index][action]
+
+            if agent.finished or action == Action.WAIT:
+                continue
+            if action in self._action_to_direction:
+                if valid_actions[agent_index]:
+                    proposed_locations[agent_index] = np.clip(
+                        old_locations[agent_index]
+                        + self._action_to_direction[action],
+                        0,
+                        self.size - 1,
+                    )
+                else:
+                    hit_obstacles[agent_index] = True
+
+        destination_agents = {}
+        for agent_index, (old_location, proposed_location) in enumerate(
+            zip(old_locations, proposed_locations)
+        ):
+            if not np.array_equal(old_location, proposed_location):
+                destination_agents.setdefault(tuple(proposed_location), []).append(
+                    agent_index
+                )
+        for colliding_agents in destination_agents.values():
+            if len(colliding_agents) > 1:
+                for agent_index in colliding_agents:
+                    proposed_locations[agent_index] = old_locations[agent_index]
+                    hit_obstacles[agent_index] = True
+
+        for agent_index, agent in enumerate(self._agent_states):
+            if not np.array_equal(old_locations[agent_index], proposed_locations[agent_index]):
+                agent.previous_location = old_locations[agent_index]
+                agent.location = proposed_locations[agent_index]
+
+        completed_this_step = [False] * agent_count
+        for agent_index, agent in enumerate(self._agent_states):
+            if (
+                agent.finished
+                or Action(int(actions[agent_index])) != Action.INTERACT
+                or not valid_actions[agent_index]
+                or not np.array_equal(agent.location, agent.target_location)
+            ):
+                continue
+
+            agent_desk = self._desk_locations[agent.desk_name]
+            if (
+                not agent.carrying_document
+                and np.array_equal(agent.current_station_location, agent_desk)
+            ):
+                agent.carrying_document = True
+                agent.current_station_location = agent.task_route[
+                    agent.route_index
+                ].copy()
+                agent.target_location = self._approach_for_station(
+                    agent.current_station_location
+                )
+            elif agent.carrying_document:
+                agent.route_index += 1
+                if agent.route_index == len(agent.task_route):
+                    agent.finished = True
+                    completed_this_step[agent_index] = True
+                else:
+                    agent.current_station_location = agent.task_route[
+                        agent.route_index
+                    ].copy()
+                    agent.target_location = self._approach_for_station(
+                        agent.current_station_location
+                    )
+
+        rewards = []
+        for agent_index, agent in enumerate(self._agent_states):
+            if old_finished[agent_index]:
+                rewards.append(0.0)
+                continue
+            self._active_agent_index = agent_index
+            new_distance = self._get_path_distance()
+            difference = old_distances[agent_index] - new_distance
+            reward = 0.1 * difference - 0.01
+            if (
+                not np.array_equal(old_locations[agent_index], agent.location)
+                and np.array_equal(
+                    agent.location,
+                    old_previous_locations[agent_index],
+                )
+            ):
+                reward -= 0.05
+            if hit_obstacles[agent_index]:
+                reward -= 0.2
+            if completed_this_step[agent_index]:
+                reward += 1.0
+            rewards.append(reward)
+
+        self._active_agent_index = previous_active_agent_index
+        terminated = all(agent.finished for agent in self._agent_states)
+        info = {
+            "distance": float(np.mean([
+                self._path_distance_for_agent(index)
+                for index in range(agent_count)
+                if not self._agent_states[index].finished
+            ])) if not terminated else 0.0,
+            "agents_finished": {
+                agent.agent_id: agent.finished
+                for agent in self._agent_states
+            },
+            "agent_rewards": {
+                agent.agent_id: rewards[index]
+                for index, agent in enumerate(self._agent_states)
+            },
+        }
+
+        if self.render_mode == "human":
+            self.render()
+
+        team_reward = sum(rewards) / max(1, active_agent_count)
+        return None, float(team_reward), terminated, False, info
+
+    def _path_distance_for_agent(self, agent_index):
+        previous_active_agent_index = self._active_agent_index
+        self._active_agent_index = agent_index
+        distance = self._get_path_distance()
+        self._active_agent_index = previous_active_agent_index
+        return distance
+
     def step(self, action, agent_index=None):
 
         if agent_index is not None:
