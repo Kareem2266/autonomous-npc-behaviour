@@ -66,7 +66,11 @@ class SimultaneousMultiAgentEnv(gym.Env):
     def action_masks(self):
         return np.concatenate(
             [
-                self.office_env.action_masks(agent_index)
+                self.office_env.action_masks(
+                    agent_index,
+                    allow_detours=True,
+                    allow_occupied_cells=True,
+                )
                 for agent_index in range(self.agent_count)
             ]
         )
