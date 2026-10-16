@@ -1,64 +1,107 @@
-from autonomous_npc.envs.office_env import OfficeEnv
+from collections import deque
+
+import numpy as np
+
+from autonomous_npc.envs.office_env import Action, DEFAULT_AGENT_CONFIGS, OfficeEnv
+from autonomous_npc.envs.multi_agent_env import SimultaneousMultiAgentEnv
 from sb3_contrib import MaskablePPO
 # from stable_baselines3 import PPO
 
 def main():
-    env = OfficeEnv()
-    model = MaskablePPO.load("office_10x10_masked_ppo", env=env)
+    office_env = OfficeEnv(agent_configs=DEFAULT_AGENT_CONFIGS)
+    env = SimultaneousMultiAgentEnv(office_env)
+    model = MaskablePPO.load(
+        "office_simultaneous_multi_agent_masked_ppo",
+        env=env,
+    )
     
     successes = 0
     successful_steps = 0
-    successful_shortest_steps = 0
     run_amount = 100
 
     for episode in range(run_amount):
         observation, info = env.reset(seed=episode)
-        shortest_steps = int(info["distance"])
-        picked_up = False
         steps = 0
+        recent_steps = deque(maxlen=12)
         terminated = False
         truncated = False
-        trajectory = []
-        while not terminated and not truncated and steps < 100:
-           
-            before = tuple(observation["agent"])
-            previous_target = tuple(observation["target"])
+        while not terminated and not truncated:
+            before = [
+                {
+                    "location": tuple(agent.location),
+                    "target": tuple(agent.target_location),
+                    "station": tuple(agent.current_station_location),
+                    "route_index": agent.route_index,
+                    "carrying": agent.carrying_document,
+                    "finished": agent.finished,
+                }
+                for agent in office_env._agent_states
+            ]
             action, _ = model.predict(
                 observation,
                 deterministic=True,
                 action_masks=env.action_masks(),
             )
-            action = action.item()
-           
             observation, _, terminated, truncated, info = env.step(action)
-            after = tuple(observation["agent"])
-            trajectory.append((before, action, after))
-
-            if tuple(observation["target"]) != previous_target:
-                shortest_steps += int(info["distance"])
-                if not picked_up:
-                    shortest_steps += 1
-                    picked_up = True
 
             steps += 1
+            after = [
+                {
+                    "location": tuple(agent.location),
+                    "target": tuple(agent.target_location),
+                    "station": tuple(agent.current_station_location),
+                    "route_index": agent.route_index,
+                    "carrying": agent.carrying_document,
+                    "finished": agent.finished,
+                }
+                for agent in office_env._agent_states
+            ]
+            recent_steps.append((steps, np.asarray(action).reshape(-1).copy(), before, after))
         
         if terminated:
             successes += 1
             successful_steps += steps
-            successful_shortest_steps += shortest_steps
         else:
-            print(f"Failed seed {episode}; target: {tuple(observation['target'])}")
-            print("Last 12 moves (before, action number, after):", trajectory[-12:])
+            unfinished_agents = [
+                agent_id
+                for agent_id, finished in info["agents_finished"].items()
+                if not finished
+            ]
+            print(f"Failed seed {episode}; unfinished agents: {unfinished_agents}")
+            print("Final worker states:")
+            for agent in office_env._agent_states:
+                print(
+                    f"  {agent.agent_id}: position={tuple(agent.location)}, "
+                    f"target={tuple(agent.target_location)}, "
+                    f"station={tuple(agent.current_station_location)}, "
+                    f"route_index={agent.route_index}/{len(agent.task_route)}, "
+                    f"carrying={agent.carrying_document}, finished={agent.finished}"
+                )
+            print("Last 12 simultaneous ticks:")
+            for tick, actions, before, after in recent_steps:
+                transitions = []
+                for index, (old, new) in enumerate(zip(before, after)):
+                    action_name = Action(int(actions[index])).name
+                    transitions.append(
+                        f"{office_env._agent_states[index].agent_id} {action_name}: "
+                        f"{old['location']} -> {new['location']}; "
+                        f"target {old['target']} -> {new['target']}; "
+                        f"station={new['station']} route={new['route_index']} "
+                        f"carrying={new['carrying']}"
+                    )
+                print(f"  tick {tick}: " + " | ".join(transitions))
 
-        print(f"Episode {episode + 1}: reached target: {terminated}; steps: {steps}")
+        completed_agents = sum(info["agents_finished"].values())
+        print(
+            f"Episode {episode + 1}: all agents finished: {terminated}; "
+            f"agents: {completed_agents}/{len(DEFAULT_AGENT_CONFIGS)}; "
+            f"simultaneous ticks: {steps}"
+        )
     print(f"Success rate: {successes}/{run_amount}")
 
     if successes:
         average_steps = successful_steps / successes
-        average_shortest = successful_shortest_steps / successes
         print(f"Average steps: {average_steps:.1f}")
-        print(f"Average shortest route: {average_shortest:.1f}")
-        print(f"Average extra steps: {average_steps - average_shortest:.1f}")
     else:
         print("No successful episodes.")
 
