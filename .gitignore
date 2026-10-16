@@ -16,3 +16,9 @@ PROJECT_HANDOFF.md
 *.csproj
 *.sln
 *.slnx
+
+# Imported OfficeCharacters pack (local Unity assets)
+unity-demo/unity-office-demo/Assets/OfficeCharactersPack/
+unity-demo/unity-office-demo/Assets/OfficeCharactersPack.meta
+unity-demo/unity-office-demo/Assets/Resources/OfficeWorker.prefab
+unity-demo/unity-office-demo/Assets/Resources/OfficeWorker.prefab.meta
