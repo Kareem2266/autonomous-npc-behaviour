@@ -18,6 +18,7 @@ class Action(IntEnum):
 @dataclass
 class AgentState:
     agent_id: str
+    desk_name: str
     location: np.ndarray
     previous_location: np.ndarray
     target_location: np.ndarray
@@ -25,15 +26,17 @@ class AgentState:
     task_route: list[np.ndarray]
     route_index: int = 0
     carrying_document: bool = False
+    finished: bool = False
 
 @dataclass(frozen=True)
 class AgentConfig:
     agent_id: str
     task_route: tuple[str,...]
+    desk_name: str | None = None
 
 DEFAULT_AGENT_CONFIGS = (
-    AgentConfig("worker_1", ("printer", "snack", "desk")),
-    AgentConfig("worker_2", ("coffee", "bathroom", "desk")),
+    AgentConfig("worker_1", ("printer", "snack", "desk_1"), "desk_1"),
+    AgentConfig("worker_2", ("coffee", "bathroom", "desk_2"), "desk_2"),
 )
 
 class OfficeEnv(gym.Env):
@@ -64,28 +67,75 @@ class OfficeEnv(gym.Env):
             [[size // 2, size // 2], [size // 2, (size // 2 + 1) % size]],
             dtype=np.int32,
         )
+
+        self._agent_configs = (
+            None if agent_configs is None else tuple(agent_configs)
+        )
+        if self._agent_configs is not None and not self._agent_configs:
+            raise ValueError("At least one agent config is required.")
+        agent_count = 1 if self._agent_configs is None else len(self._agent_configs)
+        self._desk_names = (
+            ["desk_1"]
+            if self._agent_configs is None
+            else [
+                config.desk_name or f"desk_{index + 1}"
+                for index, config in enumerate(self._agent_configs)
+            ]
+        )
+        if len(self._desk_names) != len(set(self._desk_names)):
+            raise ValueError("Each agent must have a unique desk name.")
         
         if size == 10:
-            self._desk_location = np.array([1, 5], dtype=np.int32)
             self._printer_location = np.array([8, 2], dtype=np.int32)
             self._bathroom_location = np.array([8, 8], dtype=np.int32)
             self._snack_location = np.array([3, 2], dtype=np.int32)
             self._coffee_location = np.array([3, 8], dtype=np.int32)
 
             self._station_approach_locations = {
-                tuple(self._desk_location): np.array([2, 5], dtype=np.int32),
                 tuple(self._printer_location): np.array([7, 2], dtype=np.int32),
                 tuple(self._bathroom_location): np.array([7, 8], dtype=np.int32),
                 tuple(self._snack_location): np.array([2, 2], dtype=np.int32),
                 tuple(self._coffee_location): np.array([2, 8], dtype=np.int32),
             }
 
+            # Keep the original desk position for one worker. With more
+            # workers, spread desks along the left side and reserve the
+            # neighboring cell as each desk's approach tile.
+            desk_rows = [5] if agent_count == 1 else [4, 6, 3, 7, 1, 9, 0, 5]
+            if agent_count > len(desk_rows):
+                raise ValueError(
+                    f"A {size}x{size} office supports at most "
+                    f"{len(desk_rows)} desks with the current station layout."
+                )
+            desk_rows = desk_rows[:agent_count]
+            desk_positions = [
+                np.array([1, row], dtype=np.int32) for row in desk_rows
+            ]
+            for desk_name, desk_position in zip(self._desk_names, desk_positions):
+                self._station_approach_locations[tuple(desk_position)] = np.array(
+                    [2, int(desk_position[1])], dtype=np.int32
+                )
+
         else:
-            self._desk_location = np.array([0, size // 2], dtype=np.int32)
             self._printer_location = np.array([size - 1, (size -1) // 2], dtype=np.int32)
             self._station_approach_locations = {}
+            if agent_count > size:
+                raise ValueError(
+                    f"A {size}x{size} office supports at most {size} desks."
+                )
+            desk_rows = list(range(size))
+            desk_positions = [
+                np.array([0, row], dtype=np.int32) for row in desk_rows[:agent_count]
+            ]
+
+        self._desk_locations = {
+            desk_name: position
+            for desk_name, position in zip(self._desk_names, desk_positions)
+        }
+        self._desk_location = self._desk_locations[self._desk_names[0]]
 
         self._station_locations = {
+            **self._desk_locations,
             "desk": self._desk_location,
             "printer": self._printer_location
         }
@@ -97,10 +147,6 @@ class OfficeEnv(gym.Env):
                 "coffee": self._coffee_location,
             })
 
-        self._agent_configs = (
-            None if agent_configs is None else tuple(agent_configs)
-        )
-
         if self._agent_configs is not None:
             agent_ids = [
                 agent_config.agent_id for agent_config in self._agent_configs
@@ -108,33 +154,58 @@ class OfficeEnv(gym.Env):
             if len(agent_ids) != len(set(agent_ids)):
                 raise ValueError("Agent IDs must be unique.")
 
-            for agent_config in self._agent_configs:
+            self._agent_route_names = []
+            for agent_config, desk_name in zip(
+                self._agent_configs, self._desk_names
+            ):
+                route_names = tuple(
+                    desk_name if station_name == "desk" else station_name
+                    for station_name in agent_config.task_route
+                )
+                desk_stops = {
+                    station_name
+                    for station_name in route_names
+                    if station_name in self._desk_locations
+                }
+                if desk_stops - {desk_name}:
+                    raise ValueError(
+                        f"{agent_config.agent_id} can only use its assigned "
+                        f"desk {desk_name!r} in its route."
+                    )
+                if not route_names or route_names[-1] != desk_name:
+                    route_names = (*route_names, desk_name)
+
                 unknown_stations = (
-                    set(agent_config.task_route) - set(self._station_locations)
+                    set(route_names) - set(self._station_locations)
                 )
                 if unknown_stations:
                     raise ValueError(
                         f"Unknown stations for {agent_config.agent_id}: "
                         f"{sorted(unknown_stations)}"
                     )
-
-        if self._agent_configs is not None and not self._agent_configs:
-            raise ValueError("At least one agent config is required.")
+                self._agent_route_names.append(route_names)
 
         state_configs = self._agent_configs
         if state_configs is None:
             state_configs = (AgentConfig("worker_1", ()),)
 
         self._agent_states = []
-        for agent_config in state_configs:
+        for agent_index, agent_config in enumerate(state_configs):
+            desk_name = self._desk_names[agent_index]
+            route_names = (
+                self._agent_route_names[agent_index]
+                if self._agent_configs is not None
+                else agent_config.task_route
+            )
             self._agent_states.append(
                 AgentState(
                     agent_id=agent_config.agent_id,
+                    desk_name=desk_name,
                     location=np.array([-1, -1], dtype=np.int32),
                     previous_location=np.array([-1, -1], dtype=np.int32),
                     target_location=np.array([-1, -1], dtype=np.int32),
                     current_station_location=np.array([-1, -1], dtype=np.int32),
-                    task_route=self._location_for_route(agent_config.task_route),
+                    task_route=self._location_for_route(route_names),
                 )
             )
 
@@ -298,18 +369,18 @@ class OfficeEnv(gym.Env):
                 self.np_random.integers(len(task_routes))
             ]
         else:
-            for agent_config, agent_state in zip(
-                self._agent_configs, self._agent_states
-            ):
+            for agent_index, agent_state in enumerate(self._agent_states):
                 agent_state.task_route = self._location_for_route(
-                    agent_config.task_route
+                    self._agent_route_names[agent_index]
                 )
         for agent_state in self._agent_states:
             agent_state.carrying_document = False
+            agent_state.finished = False
             agent_state.route_index = 0
-            agent_state.current_station_location = self._desk_location.copy()
+            agent_desk = self._desk_locations[agent_state.desk_name]
+            agent_state.current_station_location = agent_desk.copy()
             agent_state.target_location = self._approach_for_station(
-                self._desk_location
+                agent_desk
             )
 
         all_cells = [
@@ -317,19 +388,9 @@ class OfficeEnv(gym.Env):
             for x in range(self.size)
             for y in range(self.size)
         ]
-        if self.size == 10:
-            reserved_cells = {
-                tuple(self._desk_location),
-                tuple(self._printer_location),
-                tuple(self._bathroom_location),
-                tuple(self._snack_location),
-                tuple(self._coffee_location),
-            }
-        else:
-            reserved_cells = {
-                tuple(self._desk_location),
-                tuple(self._printer_location),
-            }
+        reserved_cells = {
+            tuple(location) for location in self._station_locations.values()
+        }
 
         reserved_cells.update(
             tuple(approach)
@@ -355,7 +416,8 @@ class OfficeEnv(gym.Env):
             routes_reachable = True
             for agent_index, agent_state in enumerate(self._agent_states):
                 self._active_agent_index = agent_index
-                route_stops = [self._desk_location, *agent_state.task_route]
+                agent_desk = self._desk_locations[agent_state.desk_name]
+                route_stops = [agent_desk, *agent_state.task_route]
                 approach_stops = [
                     self._approach_for_station(stop) for stop in route_stops
                 ]
@@ -374,7 +436,10 @@ class OfficeEnv(gym.Env):
                 continue
 
             self._active_agent_index = 0
-            self._target_location = self._approach_for_station(self._desk_location)
+            first_desk = self._desk_locations[
+                self._agent_states[0].desk_name
+            ]
+            self._target_location = self._approach_for_station(first_desk)
             blocked_cells = {tuple(cell) for cell in obstacles}
             reachable_starts = []
 
@@ -400,9 +465,10 @@ class OfficeEnv(gym.Env):
                 start = np.asarray(reachable_starts[start_index], dtype=np.int32)
                 agent_state.location = start
                 agent_state.previous_location = start.copy()
-                agent_state.current_station_location = self._desk_location.copy()
+                agent_desk = self._desk_locations[agent_state.desk_name]
+                agent_state.current_station_location = agent_desk.copy()
                 agent_state.target_location = self._approach_for_station(
-                    self._desk_location
+                    agent_desk
                 )
 
             self._active_agent_index = 0
@@ -413,8 +479,11 @@ class OfficeEnv(gym.Env):
             raise ValueError("Could not create a reachable layout for all agents.")
 
         self._previous_agent_location = self._agent_location.copy()
-        self._current_station_location = self._desk_location.copy()
-        self._target_location = self._approach_for_station(self._desk_location)
+        first_desk = self._desk_locations[
+            self._agent_states[0].desk_name
+        ]
+        self._current_station_location = first_desk.copy()
+        self._target_location = self._approach_for_station(first_desk)
 
         observation = self._get_obs()
         info = self._get_info()
@@ -429,6 +498,11 @@ class OfficeEnv(gym.Env):
             self._select_agent(agent_index)
 
         mask = np.ones(self.action_space.n, dtype=bool)
+
+        if self._agent_states[self._active_agent_index].finished:
+            mask[:] = False
+            mask[Action.WAIT] = True
+            return mask
 
         other_agent_cells = {
             tuple(agent_state.location)
@@ -468,7 +542,9 @@ class OfficeEnv(gym.Env):
                 at_target
                 and np.array_equal(
                     self._current_station_location,
-                    self._desk_location,
+                    self._desk_locations[
+                        self._agent_states[self._active_agent_index].desk_name
+                    ],
                 )
             )
 
@@ -483,6 +559,25 @@ class OfficeEnv(gym.Env):
 
         if agent_index is not None:
             self._select_agent(agent_index)
+
+        active_agent = self._agent_states[self._active_agent_index]
+        if active_agent.finished:
+            observation = self._get_obs()
+            info = self._get_info()
+            info["agents_finished"] = {
+                agent.agent_id: agent.finished
+                for agent in self._agent_states
+            }
+            return (
+                observation,
+                0.0,
+                all(agent.finished for agent in self._agent_states),
+                False,
+                info,
+            )
+
+        completed_this_step = False
+
 
         # rewards progress
         old_distance = self._get_info()["distance"]
@@ -535,7 +630,7 @@ class OfficeEnv(gym.Env):
                 not self._carrying_document
                 and np.array_equal(
                    self._current_station_location,
-                    self._desk_location,
+                    self._desk_locations[active_agent.desk_name],
                 )
             ):
                 self._carrying_document = True
@@ -544,11 +639,13 @@ class OfficeEnv(gym.Env):
             elif self._carrying_document:
                 self._route_index += 1
                 if self._route_index == len(self._task_route):
-                    terminated = True
+                    active_agent.finished = True
+                    completed_this_step = True
                 else:
                     self._current_station_location = self._task_route[self._route_index].copy()
                     self._target_location = self._approach_for_station(self._current_station_location)
 
+        terminated = all(agent.finished for agent in self._agent_states)
 
         difference = old_distance - new_distance
 
@@ -561,12 +658,16 @@ class OfficeEnv(gym.Env):
         if hit_obstacle:
             reward -= 0.2
 
-        if terminated:
+        if completed_this_step:
             reward += 1
 
 
         observation = self._get_obs()
         info = self._get_info()
+        info["agents_finished"] = {
+            agent.agent_id: agent.finished
+            for agent in self._agent_states
+        }
 
         if self.render_mode == "human":
             self.render()
