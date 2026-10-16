@@ -232,6 +232,17 @@ class OfficeEnv(gym.Env):
                 "target": self._target_location,
                 "obstacle": self._obstacle_locations}
 
+    def _select_agent(self, agent_index):
+        if agent_index < 0 or agent_index >= len(self._agent_states):
+            raise IndexError(f"Invalid agent index: {agent_index}")
+        self._active_agent_index = agent_index
+
+    def get_agent_observation(self, agent_index):
+        self._select_agent(agent_index)
+        return self._get_obs()
+
+
+
     def _get_path_distance(self, start_location=None):
         start = tuple(
             self._agent_location if start_location is None else start_location
@@ -331,54 +342,75 @@ class OfficeEnv(gym.Env):
         ]
 
         layout_found = False
-        for _ in range(1000):
+        for _ in range (1000):
             indices = self.np_random.choice(
-                len(obstacle_candidates), size=2, replace=False
+                len(obstacle_candidates), size = 2, replace=False
             )
             obstacles = np.asarray(
                 [obstacle_candidates[index] for index in indices],
                 dtype=np.int32,
             )
-
             self._obstacle_locations = obstacles
 
-            # Keep layouts where every leg of the selected task route is open.
-            route_stops = [self._desk_location, *self._task_route]
-            approach_stops = [self._approach_for_station(stop) for stop in route_stops]
-            route_reachable = True
+            routes_reachable = True
+            for agent_index, agent_state in enumerate(self._agent_states):
+                self._active_agent_index = agent_index
+                route_stops = [self._desk_location, *agent_state.task_route]
+                approach_stops = [
+                    self._approach_for_station(stop) for stop in route_stops
+                ]
 
-            for start, target in zip(approach_stops, approach_stops[1:]):
-                self._agent_location = start.copy()
-                self._target_location = target.copy()
-                if not np.isfinite(self._get_path_distance()):
-                    route_reachable = False
+                for start, target in zip(approach_stops, approach_stops[1:]):
+                    self._agent_location = start.copy()
+                    self._target_location = target.copy()
+                    if not np.isfinite(self._get_path_distance()):
+                        routes_reachable = False
+                        break
+
+                if not routes_reachable:
                     break
 
-            if not route_reachable:
+            if not routes_reachable:
                 continue
 
+            self._active_agent_index = 0
+            self._target_location = self._approach_for_station(self._desk_location)
             blocked_cells = {tuple(cell) for cell in obstacles}
             reachable_starts = []
+
             for cell in all_cells:
                 if cell in blocked_cells or cell in reserved_cells:
                     continue
 
                 self._agent_location = np.asarray(cell, dtype=np.int32)
-                self._target_location = self._approach_for_station(self._desk_location)
                 if np.isfinite(self._get_path_distance()):
                     reachable_starts.append(cell)
 
-            if reachable_starts:
-                start_index = self.np_random.integers(len(reachable_starts))
-                self._agent_location = np.asarray(
-                    reachable_starts[start_index], dtype=np.int32
+            if len(reachable_starts) < len(self._agent_states):
+                continue
+
+            start_indices = self.np_random.choice(
+                len(reachable_starts),
+                size=len(self._agent_states),
+                replace=False,
+            )
+
+            for agent_index, start_index in enumerate(start_indices):
+                agent_state = self._agent_states[agent_index]
+                start = np.asarray(reachable_starts[start_index], dtype=np.int32)
+                agent_state.location = start
+                agent_state.previous_location = start.copy()
+                agent_state.current_station_location = self._desk_location.copy()
+                agent_state.target_location = self._approach_for_station(
+                    self._desk_location
                 )
-                layout_found = True
-                break
+
+            self._active_agent_index = 0
+            layout_found = True
+            break
 
         if not layout_found:
-            raise ValueError("Could not create a reachable layout with two obstacles.")
-
+            raise ValueError("Could not create a reachable layout for all agents.")
 
         self._previous_agent_location = self._agent_location.copy()
         self._current_station_location = self._desk_location.copy()
@@ -392,8 +424,18 @@ class OfficeEnv(gym.Env):
 
         return observation, info
 
-    def action_masks(self):
+    def action_masks(self, agent_index=None):
+        if agent_index is not None:
+            self._select_agent(agent_index)
+
         mask = np.ones(self.action_space.n, dtype=bool)
+
+        other_agent_cells = {
+            tuple(agent_state.location)
+            for index, agent_state in enumerate(self._agent_states)
+            if index != self._active_agent_index
+            and np.all(agent_state.location >= 0)
+        }
 
         for action, direction in self._action_to_direction.items():
             next_location = self._agent_location + direction
@@ -403,9 +445,10 @@ class OfficeEnv(gym.Env):
                 for obstacle in self._obstacle_locations
             )
             hits_station = tuple(next_location) in self._station_approach_locations
-            if outside_grid or hits_obstacle or hits_station:
+            hits_agent = tuple(next_location) in other_agent_cells
+            if outside_grid or hits_obstacle or hits_station or hits_agent:
                 mask[action] = False
-            elif not outside_grid and not hits_obstacle and not hits_station:
+            elif not outside_grid and not hits_obstacle and not hits_station and not hits_agent:
                 current_distance = self._get_path_distance()
                 next_distance = self._get_path_distance(next_location)
                 if next_distance >= current_distance:
@@ -430,10 +473,16 @@ class OfficeEnv(gym.Env):
             )
 
         mask[Action.WAIT] = False
+        if not np.any(mask):
+            mask[Action.WAIT] = True
+
 
         return mask
 
-    def step(self, action):
+    def step(self, action, agent_index=None):
+
+        if agent_index is not None:
+            self._select_agent(agent_index)
 
         # rewards progress
         old_distance = self._get_info()["distance"]
@@ -451,12 +500,21 @@ class OfficeEnv(gym.Env):
 
         reversed_step = not np.array_equal(proposed_location, self._agent_location) and np.array_equal(proposed_location, self._previous_agent_location)
 
+        other_agent_cells = {
+            tuple(agent_state.location)
+            for index, agent_state in enumerate(self._agent_states)
+            if index != self._active_agent_index
+            and np.all(agent_state.location >= 0)
+        }
+
+
         hit_obstacle = (
             any(
                 np.array_equal(proposed_location, obstacle)
                 for obstacle in self._obstacle_locations
             )
             or tuple(proposed_location) in self._station_approach_locations
+            or tuple(proposed_location) in other_agent_cells
         )
 
         if not hit_obstacle and not np.array_equal(proposed_location, self._agent_location):
