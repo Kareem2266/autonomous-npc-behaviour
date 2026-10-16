@@ -175,18 +175,6 @@ public class PythonCommandReceiver : MonoBehaviour
 
         CreateOfficeCube("Office Sign Backing", new Vector3(0f, 1.76f, 4.78f),
             new Vector3(2.35f, 0.40f, 0.10f), signFace, parent);
-        GameObject sign = new GameObject("Office Sign");
-        sign.transform.SetParent(parent, false);
-        sign.transform.position = new Vector3(0f, 1.76f, 4.71f);
-        sign.transform.rotation = Quaternion.identity;
-        TextMesh signText = sign.AddComponent<TextMesh>();
-        signText.text = "OFFICE";
-        signText.anchor = TextAnchor.MiddleCenter;
-        signText.alignment = TextAlignment.Center;
-        signText.fontSize = 100;
-        signText.characterSize = 0.13f;
-        signText.fontStyle = FontStyle.Bold;
-        signText.color = new Color(0.96f, 0.91f, 0.79f);
 
         // Recolor the existing key light to a softer warm-neutral tone.
         Light keyLight = FindAnyObjectByType<Light>();
