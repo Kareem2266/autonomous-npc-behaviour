@@ -68,8 +68,9 @@ class SimultaneousMultiAgentEnv(gym.Env):
             [
                 self.office_env.action_masks(
                     agent_index,
-                    allow_detours=True,
+                    allow_detours=False,
                     allow_occupied_cells=True,
+                    allow_blocked_route_detours=True,
                 )
                 for agent_index in range(self.agent_count)
             ]

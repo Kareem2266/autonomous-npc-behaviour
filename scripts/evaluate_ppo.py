@@ -1,3 +1,4 @@
+import argparse
 from collections import deque
 
 import numpy as np
@@ -8,19 +9,29 @@ from sb3_contrib import MaskablePPO
 # from stable_baselines3 import PPO
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model-path",
+        default="office_simultaneous_multi_agent_masked_ppo",
+    )
+    parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--seed-start", type=int, default=0)
+    args = parser.parse_args()
+
     office_env = OfficeEnv(agent_configs=DEFAULT_AGENT_CONFIGS)
     env = SimultaneousMultiAgentEnv(office_env)
     model = MaskablePPO.load(
-        "office_simultaneous_multi_agent_masked_ppo",
+        args.model_path,
         env=env,
     )
     
     successes = 0
     successful_steps = 0
-    run_amount = 100
+    run_amount = args.episodes
 
     for episode in range(run_amount):
-        observation, info = env.reset(seed=episode)
+        seed = args.seed_start + episode
+        observation, info = env.reset(seed=seed)
         steps = 0
         recent_steps = deque(maxlen=12)
         terminated = False
@@ -67,7 +78,7 @@ def main():
                 for agent_id, finished in info["agents_finished"].items()
                 if not finished
             ]
-            print(f"Failed seed {episode}; unfinished agents: {unfinished_agents}")
+            print(f"Failed seed {seed}; unfinished agents: {unfinished_agents}")
             print("Final worker states:")
             for agent in office_env._agent_states:
                 print(
