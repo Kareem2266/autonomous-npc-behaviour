@@ -1,8 +1,8 @@
 # Autonomous NPC Behaviour
 
-Autonomous NPC Behaviour is a reinforcement learning system for training non-player characters to navigate shared environments and complete goal-driven tasks. It combines a Gymnasium simulation with Maskable PPO training and evaluation, then brings the agents’ behavior into Unity with distinct animated characters and interactive stations
+Autonomous NPC Behaviour is a reinforcement learning system for training non-player characters to navigate shared environments and complete goal-driven tasks. It combines a Gymnasium simulation and Maskable PPO training with a Unity demo that shows the trained agents in action.
 
-<img width="720" height="370" alt="autonomous-npc-early-demo" src="https://github.com/user-attachments/assets/a2a940a9-d49d-4179-b823-00e0b70a0fec" />
+<img width="720" height="370" alt="Autonomous NPC Unity demo" src="https://github.com/user-attachments/assets/a2a940a9-d49d-4179-b823-00e0b70a0fec" />
 
 ## How the simulation works
 
@@ -17,7 +17,9 @@ At each tick, the policy receives one joint observation containing both workers�
 
 The reward encourages progress toward each worker’s current target, penalizes collisions and unnecessary backtracking, and rewards task completion. A shared policy is used for both workers, so it learns the same navigation behavior while conditioning on each worker’s position and task state.
 
-Project status: In progress. The environment, PPO training setup, and Unity demo are still being developed, so features and instructions may change.
+Project status: In progress. The environment and PPO training setup are still being developed, so features and instructions may change.
+
+The Unity demo is a presentation visualization. Its Unity project and bridge script are kept out of this repository, so the demo is not set up for visitors to run locally.
 
 ## Project structure
 
@@ -25,8 +27,6 @@ Project status: In progress. The environment, PPO training setup, and Unity demo
 - `src/autonomous_npc/envs/multi_agent_env.py`: Gymnasium wrapper that combines worker state into a joint observation and action space.
 - `scripts/train_ppo.py`: train the shared MaskablePPO policy and save checkpoints.
 - `scripts/evaluate_ppo.py`: run seeded episodes and report completions, episode lengths, and failure traces.
-- `scripts/demo_unity.py`: run the policy and stream worker state to Unity over local TCP.
-- `unity-demo/unity-office-demo`: Unity scene and scripts for visualizing the workers and station interactions.
 
 ## Setup
 
@@ -42,7 +42,7 @@ Run project scripts from the repository root with `PYTHONPATH=src`.
 
 ## Train
 
-Train a policy and save it to the path used by the Unity demo:
+Train a policy and save it for later evaluation:
 
 ```bash
 PYTHONPATH=src ./.venv/bin/python scripts/train_ppo.py \
@@ -65,20 +65,6 @@ PYTHONPATH=src ./.venv/bin/python scripts/evaluate_ppo.py \
 
 Use `--seed-start` to choose the first evaluation seed. Failed episodes print the final worker states and recent actions to help diagnose stalls.
 
-## Unity Character Models
-
-The character models aren’t included in this repository. Download the **[Office Characters Pack](https://fromqcwithgamedev.itch.io/office-characters-pack-low-poly-rigged-office-cast)** from its creator and import it into the Unity project.
-
-## Unity demo
-
-Open `unity-demo/unity-office-demo` in Unity and open `Assets/Scenes/SampleScene`. Press **Play**, then start the Python runner from the repository root:
-
-```bash
-PYTHONPATH=src ./.venv/bin/python scripts/demo_unity.py
-```
-
-The runner loads `models/multi_agent_fixed.zip` by default and connects to Unity over local TCP port `5005`. See [unity-demo/README.md](unity-demo/README.md) for replaying a seeded episode or using another model.
-
 ## Tests
 
 ```bash
@@ -87,4 +73,4 @@ PYTHONPATH=src ./.venv/bin/python -m pytest
 
 ## License
 
-This project's original code is provided under the MIT License; see [LICENSE](LICENSE). Third party Unity assets and character models may have separate license terms.
+This project's original code is provided under the MIT License; see [LICENSE](LICENSE).
