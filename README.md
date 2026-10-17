@@ -61,6 +61,10 @@ PYTHONPATH=src ./.venv/bin/python scripts/evaluate_ppo.py \
 
 Use `--seed-start` to choose the first evaluation seed. Failed episodes print the final worker states and recent actions to help diagnose stalls.
 
+## Unity Character Models
+
+The character models aren’t included in this repository. Download the **[Office Characters Pack](https://fromqcwithgamedev.itch.io/office-characters-pack-low-poly-rigged-office-cast)** from its creator and import it into the Unity project.
+
 ## Unity demo
 
 Open `unity-demo/unity-office-demo` in Unity and open `Assets/Scenes/SampleScene`. Press **Play**, then start the Python runner from the repository root:
