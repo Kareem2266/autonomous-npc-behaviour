@@ -54,7 +54,7 @@ def test_joint_step_moves_both_workers_from_the_same_snapshot():
     assert truncated is False
 
 
-def test_workers_both_stop_when_their_simultaneous_moves_conflict():
+def test_worker_closest_to_target_wins_shared_destination_conflict():
     environment = make_two_worker_env()
     environment.reset(seed=42)
     workers = environment.office_env._agent_states
@@ -73,8 +73,10 @@ def test_workers_both_stop_when_their_simultaneous_moves_conflict():
         np.array([Action.EAST, Action.WEST])
     )
 
-    np.testing.assert_array_equal(observation["agents"], [[4, 5], [6, 5]])
-    assert info["agent_rewards"]["worker_1"] < 0
+    # Both workers choose [5, 5], but worker 1's move reaches its target.
+    # It wins the contested cell; worker 2 waits for the next tick.
+    np.testing.assert_array_equal(observation["agents"], [[5, 5], [6, 5]])
+    assert info["agent_rewards"]["worker_1"] > 0
     assert info["agent_rewards"]["worker_2"] < 0
 
 
