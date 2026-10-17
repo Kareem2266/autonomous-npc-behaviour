@@ -15,10 +15,12 @@ public class PythonCommandReceiver : MonoBehaviour
     [SerializeField] private GameObject snackStationPrefab;
     [SerializeField] private GameObject coffeeStationPrefab;
     [SerializeField] private GameObject bathroomStationPrefab;
+    private bool isSecondaryWorker;
     private readonly ConcurrentQueue<string> messages = new();
     private TcpListener listener;
     private Thread listenerThread;
     private GridAgentController agent;
+    private GridAgentController[] agents = new GridAgentController[2];
     private Transform[] obstacleMarkers = new Transform[2];
     private Transform snackItem;
     private Transform[] coffeeCupParts = Array.Empty<Transform>();
@@ -34,7 +36,14 @@ public class PythonCommandReceiver : MonoBehaviour
 
     private void Start()
     {
+        if (isSecondaryWorker)
+        {
+            return;
+        }
+
         agent = GetComponent<GridAgentController>();
+        agents[0] = agent;
+        agent.SnapToGridPosition(0, 0);
         CreateOfficeDecor();
         if (snackStationPrefab == null)
         {
@@ -96,12 +105,19 @@ public class PythonCommandReceiver : MonoBehaviour
         {
             GameObject spawnedDesk = Instantiate(
                 deskPrefab,
-                new Vector3(-3.5f, 0f, -0.5f),
+                new Vector3(-3.5f, 0f, 0.5f),
                 Quaternion.identity);
-            spawnedDesk.name = "Desk at Desk Station";
+            spawnedDesk.name = "Desk at Worker 1 Station";
             deskStation = spawnedDesk.transform;
             DecorateDesk(spawnedDesk.transform);
             Debug.Log($"Desk spawned at {spawnedDesk.transform.position}");
+
+            GameObject secondDesk = Instantiate(
+                deskPrefab,
+                new Vector3(-3.5f, 0f, -1.5f),
+                Quaternion.identity);
+            secondDesk.name = "Desk at Worker 2 Station";
+            DecorateDesk(secondDesk.transform);
         }
         else
         {
@@ -109,6 +125,20 @@ public class PythonCommandReceiver : MonoBehaviour
         }
         obstacleMarkers[0] = CreateObstacleMarker("Obstacle 1");
         obstacleMarkers[1] = CreateObstacleMarker("Obstacle 2");
+
+        // The trained policy controls two workers. Reuse this scene worker's
+        // visual/controller setup for the second worker, without a second listener.
+        GameObject secondWorker = Instantiate(agent.gameObject);
+        secondWorker.name = "Agent 2";
+        PythonCommandReceiver duplicateReceiver =
+            secondWorker.GetComponent<PythonCommandReceiver>();
+        if (duplicateReceiver != null)
+        {
+            duplicateReceiver.isSecondaryWorker = true;
+        }
+        agents[1] = secondWorker.GetComponent<GridAgentController>();
+        agents[1].SetCharacterPrefab(Resources.Load<GameObject>("Secretary"));
+        agents[1].SnapToGridPosition(0, 1);
 
         listener = new TcpListener(IPAddress.Loopback, 5005);
         listener.Start();
@@ -175,18 +205,6 @@ public class PythonCommandReceiver : MonoBehaviour
 
         CreateOfficeCube("Office Sign Backing", new Vector3(0f, 1.76f, 4.78f),
             new Vector3(2.35f, 0.40f, 0.10f), signFace, parent);
-        GameObject sign = new GameObject("Office Sign");
-        sign.transform.SetParent(parent, false);
-        sign.transform.position = new Vector3(0f, 1.76f, 4.71f);
-        sign.transform.rotation = Quaternion.identity;
-        TextMesh signText = sign.AddComponent<TextMesh>();
-        signText.text = "OFFICE";
-        signText.anchor = TextAnchor.MiddleCenter;
-        signText.alignment = TextAlignment.Center;
-        signText.fontSize = 100;
-        signText.characterSize = 0.13f;
-        signText.fontStyle = FontStyle.Bold;
-        signText.color = new Color(0.96f, 0.91f, 0.79f);
 
         // Recolor the existing key light to a softer warm-neutral tone.
         Light keyLight = FindAnyObjectByType<Light>();
@@ -496,6 +514,11 @@ public class PythonCommandReceiver : MonoBehaviour
 
     private void Update() {
          while (messages.TryDequeue(out string line)) {
+            if (line.StartsWith("MULTI,")) {
+                ApplyMultiAgentState(line);
+                continue;
+            }
+
             if (line.StartsWith("ROUTE:")) {
                 string route = line.Substring("ROUTE:".Length).Replace(",", " -> ");
                 Debug.Log($"Planned task route: {route}");
@@ -504,28 +527,22 @@ public class PythonCommandReceiver : MonoBehaviour
 
             if (line.StartsWith("INTERACTION:")) {
                 string interaction = line.Substring("INTERACTION:".Length);
-                Debug.Log($"Station interaction: {interaction}");
-                Transform interactingStation = GetStationForInteraction(interaction);
-                if (interactingStation != null)
+                HandleInteraction(0, interaction);
+                continue;
+            }
+
+            if (line.StartsWith("EVENT,"))
+            {
+                string[] eventParts = line.Split(',');
+                if (eventParts.Length == 3 &&
+                    int.TryParse(eventParts[1], out int workerIndex) &&
+                    workerIndex >= 0 && workerIndex < agents.Length)
                 {
-                    agent.FaceTargetDuringInteraction(interactingStation);
+                    HandleInteraction(workerIndex, eventParts[2]);
                 }
-                if (interaction.IndexOf("snack", StringComparison.OrdinalIgnoreCase) >= 0)
+                else
                 {
-                    StartCoroutine(AnimatePickup(new[] { snackItem }));
-                }
-                else if (interaction.IndexOf("coffee", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    StartCoroutine(AnimatePickup(coffeeCupParts));
-                }
-                else if (interaction.IndexOf("printer", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    StartCoroutine(AnimatePrintedPaper());
-                }
-                else if (interaction.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    StartCoroutine(agent.PlayBathroomBreak());
-                    StartCoroutine(AnimateBathroomJump());
+                    Debug.LogWarning($"Invalid policy event: {line}");
                 }
                 continue;
             }
@@ -566,6 +583,90 @@ public class PythonCommandReceiver : MonoBehaviour
         }
     }
 
+    private void ApplyMultiAgentState(string line)
+    {
+        string[] values = line.Split(',');
+        // MULTI, x1,y1,gx1,gy1, x2,y2,gx2,gy2, ox1,oy1,ox2,oy2
+        if (values.Length != 13)
+        {
+            Debug.LogWarning($"Invalid multi-agent state: {line}");
+            return;
+        }
+
+        int[] state = new int[12];
+        for (int i = 0; i < state.Length; i++)
+        {
+            if (!int.TryParse(values[i + 1], out state[i]))
+            {
+                Debug.LogWarning($"Invalid multi-agent state: {line}");
+                return;
+            }
+        }
+
+        for (int i = 0; i < agents.Length; i++)
+        {
+            int offset = i * 4;
+            if (!hasReceivedInitialState)
+            {
+                agents[i].SnapToGridPosition(state[offset], state[offset + 1]);
+            }
+            else
+            {
+                agents[i].MoveToGridPosition(state[offset], state[offset + 1]);
+            }
+            if (i == 0)
+            {
+                target.position = new Vector3(
+                    state[offset + 2] - 4.5f,
+                    target.position.y,
+                    4.5f - state[offset + 3]);
+            }
+        }
+
+        hasReceivedInitialState = true;
+        for (int i = 0; i < obstacleMarkers.Length; i++)
+        {
+            int offset = 8 + i * 2;
+            obstacleMarkers[i].position = new Vector3(
+                state[offset] - 4.5f,
+                0.4f,
+                4.5f - state[offset + 1]);
+        }
+    }
+
+    private void HandleInteraction(int workerIndex, string interaction)
+    {
+        Debug.Log($"Worker {workerIndex + 1} station interaction: {interaction}");
+        GridAgentController worker = agents[workerIndex];
+        Transform interactingStation = GetStationForInteraction(interaction);
+        if (interactingStation != null)
+        {
+            worker.FaceTargetDuringInteraction(interactingStation);
+        }
+
+        if (interaction.Equals("SNACK", StringComparison.OrdinalIgnoreCase) ||
+            interaction.IndexOf("snack", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            StartCoroutine(AnimatePickup(new[] { snackItem }));
+        }
+        else if (interaction.Equals("COFFEE", StringComparison.OrdinalIgnoreCase) ||
+                 interaction.IndexOf("coffee", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            StartCoroutine(AnimatePickup(coffeeCupParts));
+        }
+        else if (interaction.Equals("PRINTER", StringComparison.OrdinalIgnoreCase) ||
+                 interaction.IndexOf("printer", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            StartCoroutine(AnimatePrintedPaper());
+        }
+        else if (interaction.Equals("BATHROOM", StringComparison.OrdinalIgnoreCase) ||
+                 interaction.IndexOf("bathroom", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            StartCoroutine(worker.PlayBathroomBreak());
+            StartCoroutine(AnimateBathroomJump(worker));
+        }
+    }
+
     private Transform GetStationForInteraction(string interaction)
     {
         if (interaction.IndexOf("printer", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -591,14 +692,14 @@ public class PythonCommandReceiver : MonoBehaviour
         return null;
     }
 
-    private IEnumerator AnimateBathroomJump()
+    private IEnumerator AnimateBathroomJump(GridAgentController worker)
     {
         if (bathroomStation == null)
         {
             yield break;
         }
 
-        while (!agent.HasReachedDestination)
+        while (!worker.HasReachedDestination)
         {
             yield return null;
         }
