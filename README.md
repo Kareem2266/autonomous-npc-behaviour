@@ -1,13 +1,28 @@
 # Autonomous NPC Behaviour
 
-A grid based office simulation where two autonomous workers share an environment, complete individual task routes, and avoid blocking one another. A shared MaskablePPO policy selects both workers' actions at each simulation tick. The same policy can drive the Unity office demo.
+A small reinforcement learning project for teaching office workers to navigate a shared workspace and complete assigned tasks. It combines a Gymnasium environment, a shared MaskablePPO policy, training and evaluation scripts, and a Unity visualization.
 
-## Features
+## How the simulation works
 
-- Simultaneous actions for multiple workers, with separate desks, routes, targets, and task state.
-- Action masking and collision handling for obstacles, occupied cells, and shared destinations.
-- PPO training with periodic checkpoints and a multi episode evaluation script.
-- A Unity demo that displays both workers and plays station interaction animations.
+The office is represented as a 10 by 10 grid. Each worker has a desk and an ordered route of stations. At the beginning of an episode, a worker interacts with their desk to pick up a document, travels to each assigned station, interacts there, and returns to their desk to finish. The default routes are:
+
+- Worker 1: desk → printer → snack area → desk.
+- Worker 2: desk → coffee area → bathroom → desk.
+
+The environment chooses two obstacle locations and random worker starting positions for each episode, while checking that the routes remain reachable. Episodes end when both workers finish or the 400 tick limit is reached.
+
+At each tick, the policy receives one joint observation containing both workers’ positions, previous positions, targets, document carrying state, completion state, and the obstacle locations. It chooses one action per worker at the same time. Actions are north, east, south, west, interact, or wait. Action masks remove moves that are currently invalid and allow controlled detours when the direct route is blocked. Collision handling resolves shared destinations and prevents a worker from moving into a cell occupied by a worker who stays there.
+
+The reward encourages progress toward each worker’s current target, penalizes collisions and unnecessary backtracking, and rewards task completion. A shared policy is used for both workers, so it learns the same navigation behavior while conditioning on each worker’s position and task state.
+
+## Project structure
+
+- `src/autonomous_npc/envs/office_env.py`: grid layout, station interactions, rewards, action masks, and simultaneous movement/collision rules.
+- `src/autonomous_npc/envs/multi_agent_env.py`: Gymnasium wrapper that combines worker state into a joint observation and action space.
+- `scripts/train_ppo.py`: train the shared MaskablePPO policy and save checkpoints.
+- `scripts/evaluate_ppo.py`: run seeded episodes and report completions, episode lengths, and failure traces.
+- `scripts/demo_unity.py`: run the policy and stream worker state to Unity over local TCP.
+- `unity-demo/unity-office-demo`: Unity scene and scripts for visualizing the workers and station interactions.
 
 ## Setup
 
