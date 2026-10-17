@@ -3,49 +3,38 @@ import secrets
 import socket
 import time
 
-from autonomous_npc.envs.office_env import OfficeEnv
+import numpy as np
 from sb3_contrib import MaskablePPO
-# from stable_baselines3 import PPO
+from autonomous_npc.envs.office_env import DEFAULT_AGENT_CONFIGS, OfficeEnv
+from autonomous_npc.envs.multi_agent_env import SimultaneousMultiAgentEnv
 
-STATION_NAMES = {
-    (1, 5): "Desk",
-    (8, 2): "Printer",
-    (8, 8): "Bathroom",
-    (3, 2): "Snack Area",
-    (3, 8): "Coffee Area",
+STATION_EVENTS = {
+    (8, 2): "PRINTER",
+    (3, 2): "SNACK",
+    (3, 8): "COFFEE",
+    (8, 8): "BATHROOM",
 }
 
-# The environment targets these neighboring cells, not the station tiles.
-APPROACH_STATION_NAMES = {
-    (2, 5): "Desk",
-    (7, 2): "Printer",
-    (7, 8): "Bathroom",
-    (2, 2): "Snack Area",
-    (2, 8): "Coffee Area",
-}
-
-STATION_INTERACTIONS = {
-    (7, 2): "Printed a page",
-    (7, 8): "Taking a quick bathroom break",
-    (2, 2): "Picked up a snack",
-    (2, 8): "Picked up a cup of coffee",
-}
 
 def send_state(connection, observation):
-    agent_x, agent_y = map(int, observation["agent"])
-    target_x, target_y = map(int, observation["target"])
-    obstacles = observation["obstacle"].astype(int).flatten()
+    """Send both workers, both goals, and the two obstacles as one TCP line."""
+    values = ["MULTI"]
+    for position, target in zip(observation["agents"], observation["targets"]):
+        values.extend(map(str, (*map(int, position), *map(int, target))))
+    values.extend(map(str, observation["obstacles"].astype(int).flatten()))
+    connection.sendall((",".join(values) + "\n").encode("utf-8"))
 
-    message = (
-        f"{agent_x},{agent_y},{target_x},{target_y},"
-        f"{obstacles[0]},{obstacles[1]},{obstacles[2]},{obstacles[3]}\n"
-    )
-    connection.sendall(message.encode("utf-8"))
 
-def send_route(connection, env):
-    route = [env._desk_location, *env._task_route, env._desk_location]
-    message = "ROUTE:" + ",".join(STATION_NAMES[tuple(stop)] for stop in route) + "\n"
-    connection.sendall(message.encode("utf-8"))
+def send_station_events(connection, before, office_env):
+    for index, (previous, agent) in enumerate(zip(before, office_env._agent_states)):
+        if previous["carrying"] and agent.route_index > previous["route_index"]:
+            station = tuple(map(int, previous["station"]))
+            event = STATION_EVENTS.get(station)
+            if event is not None:
+                connection.sendall(
+                    f"EVENT,{index},{event}\n".encode("utf-8")
+                )
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -54,56 +43,51 @@ def main():
         type=int,
         help="Use a fixed seed to replay a run; omit it for a random seed.",
     )
+    parser.add_argument(
+        "--model-path",
+        default="models/multi_agent_fixed",
+        help="Path to the trained simultaneous multi-agent MaskablePPO model.",
+    )
+    parser.add_argument("--port", type=int, default=5005)
     args = parser.parse_args()
     seed = args.seed if args.seed is not None else secrets.randbits(32)
 
-    env = OfficeEnv()
-    model = MaskablePPO.load("office_10x10_masked_ppo")
+    env = SimultaneousMultiAgentEnv(OfficeEnv(agent_configs=DEFAULT_AGENT_CONFIGS))
+    model = MaskablePPO.load(args.model_path, env=env)
     observation, _ = env.reset(seed=seed)
     print(f"Episode seed: {seed}")
 
     # Unity must be in Play mode and listening before Python connects
-    with socket.create_connection(("127.0.0.1", 5005)) as connection:
-        send_route(connection, env)
+    with socket.create_connection(("127.0.0.1", args.port)) as connection:
         send_state(connection, observation)
         time.sleep(1.0)
 
-        for step in range(100):
-            previous_target = tuple(observation["target"])
+        for step in range(env.max_episode_steps):
+            before = [
+                {
+                    "route_index": agent.route_index,
+                    "carrying": agent.carrying_document,
+                    "station": agent.current_station_location.copy(),
+                }
+                for agent in env.office_env._agent_states
+            ]
             action, _ = model.predict(
                 observation,
                 deterministic=True,
                 action_masks=env.action_masks(),
             )
             observation, reward, terminated, truncated, info = env.step(
-                action.item()
+                np.asarray(action).reshape(-1)
             )
 
             send_state(connection, observation)
-            print(f"Step {step + 1}: agent at {observation['agent']}")
-            reached_station = tuple(observation["target"]) != previous_target
-            if reached_station:
-                reached_name = APPROACH_STATION_NAMES.get(
-                    previous_target, "unknown location"
-                )
-                interaction = STATION_INTERACTIONS.get(previous_target)
-                if interaction:
-                    event = f"{interaction} at the {reached_name}."
-                    print(f"Interaction: {event}")
-                    connection.sendall(f"INTERACTION:{event}\n".encode("utf-8"))
-                target_name = APPROACH_STATION_NAMES.get(
-                    tuple(observation["target"]), "unknown location"
-                )
-                print(f"Target changed to {target_name}.")
-            if reached_station or terminated:
-                station_pause = 2.0 if previous_target == (7, 8) else 1.0
-                time.sleep(station_pause)
-            else:
-                # At 2 Unity units per second, a one-cell move takes about 0.5 seconds.
-                time.sleep(0.5)
+            send_station_events(connection, before, env.office_env)
+            print(f"Tick {step + 1}: workers at {observation['agents'].tolist()}")
+            # Unity moves one grid cell in roughly half a second at its default speed.
+            time.sleep(0.5)
 
             if terminated or truncated:
-                print("Document delivered; episode finished.")
+                print(f"Episode finished; all workers completed: {terminated}")
                 break
     env.close()
 
