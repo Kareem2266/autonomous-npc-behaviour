@@ -2,6 +2,8 @@
 
 A small reinforcement learning project for teaching office workers to navigate a shared workspace and complete assigned tasks. It combines a Gymnasium environment, a shared MaskablePPO policy, training and evaluation scripts, and a Unity visualization.
 
+<img width="720" height="370" alt="autonomous-npc-early-demo" src="https://github.com/user-attachments/assets/a2a940a9-d49d-4179-b823-00e0b70a0fec" />
+
 ## How the simulation works
 
 The office is represented as a 10 by 10 grid. Each worker has a desk and an ordered route of stations. At the beginning of an episode, a worker interacts with their desk to pick up a document, travels to each assigned station, interacts there, and returns to their desk to finish. The default routes are:
