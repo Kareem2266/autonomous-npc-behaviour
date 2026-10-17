@@ -5,6 +5,9 @@ __pycache__/
 PROJECT_HANDOFF.md
 /*.zip
 /models/
+/unity-demo/
+/scripts/demo_unity.py
+/.github/workflows/
 
 # Local environment files; keep the example template shareable
 .env
