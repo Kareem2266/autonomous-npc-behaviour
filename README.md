@@ -1,6 +1,6 @@
 # Autonomous NPC Behaviour
 
-A small reinforcement learning project for teaching office workers to navigate a shared workspace and complete assigned tasks. It combines a Gymnasium environment, a shared MaskablePPO policy, training and evaluation scripts, and a Unity visualization.
+Autonomous NPC Behaviour is a reinforcement learning system for training non-player characters to navigate shared environments and complete goal-driven tasks. It combines a Gymnasium simulation with Maskable PPO training and evaluation, then brings the agents’ behavior into Unity with distinct animated characters and interactive stations
 
 <img width="720" height="370" alt="autonomous-npc-early-demo" src="https://github.com/user-attachments/assets/a2a940a9-d49d-4179-b823-00e0b70a0fec" />
 
