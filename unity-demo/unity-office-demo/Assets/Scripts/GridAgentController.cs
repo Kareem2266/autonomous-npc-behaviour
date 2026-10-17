@@ -15,6 +15,8 @@ public class GridAgentController : MonoBehaviour
     private Transform characterVisualRoot;
     private Transform interactionTarget;
     private bool isInteracting;
+    private GameObject characterPrefabOverride;
+    private bool hasInitializedVisual;
 
     private Transform leftUpperLeg;
     private Transform rightUpperLeg;
@@ -49,14 +51,32 @@ public class GridAgentController : MonoBehaviour
             oldBody.gameObject.SetActive(false);
         }
 
-        GameObject officeWorkerPrefab = Resources.Load<GameObject>("OfficeWorker");
-        if (officeWorkerPrefab == null)
+        GameObject characterPrefab = characterPrefabOverride != null
+            ? characterPrefabOverride
+            : Resources.Load<GameObject>("OfficeWorker");
+        InitializeCharacterVisual(characterPrefab);
+    }
+
+    private void InitializeCharacterVisual(GameObject characterPrefab)
+    {
+        if (characterPrefab == null)
         {
-            Debug.LogError("OfficeWorker.prefab was not found in Assets/Resources.", this);
+            Debug.LogError("Character prefab is missing for this worker.", this);
             agentRenderers = new Renderer[0];
             return;
         }
 
+        if (characterVisualRoot != null)
+        {
+            Destroy(characterVisualRoot.gameObject);
+        }
+
+        leftUpperLeg = null;
+        rightUpperLeg = null;
+        leftUpperArm = null;
+        rightUpperArm = null;
+        leftLowerArm = null;
+        rightLowerArm = null;
         characterVisualRoot = new GameObject("Office Worker Visual").transform;
         characterVisualRoot.SetParent(transform, false);
         // The grid root is centered half a unit above the floor; the imported
@@ -64,8 +84,12 @@ public class GridAgentController : MonoBehaviour
         characterVisualRoot.localPosition = new Vector3(0f, -0.5f, 0f);
         characterVisualRoot.localRotation = Quaternion.identity;
 
-        GameObject character = Instantiate(officeWorkerPrefab, characterVisualRoot, false);
-        character.name = "Office Worker";
+        GameObject character = Instantiate(characterPrefab, characterVisualRoot, false);
+        string modelName = characterPrefab.name == "Receptionist"
+            ? "Secretary"
+            : characterPrefab.name;
+        character.name = modelName;
+        Debug.Log($"{name} is using character model: {modelName}", this);
 
         Animator animator = character.GetComponentInChildren<Animator>();
         if (animator != null && animator.avatar != null && animator.avatar.isHuman)
@@ -88,10 +112,28 @@ public class GridAgentController : MonoBehaviour
         }
         else
         {
-            Debug.LogError("OfficeWorker needs a valid Humanoid Avatar to animate.", character);
+            Debug.LogError($"{characterPrefab.name} needs a valid Humanoid Avatar to animate.", character);
         }
 
         agentRenderers = GetComponentsInChildren<Renderer>(true);
+        hasInitializedVisual = true;
+    }
+
+    public void SetCharacterPrefab(GameObject prefab)
+    {
+        if (prefab == null)
+        {
+            Debug.LogWarning(
+                "Second-worker character prefab is not assigned; keeping the default model.",
+                this);
+            return;
+        }
+
+        characterPrefabOverride = prefab;
+        if (hasInitializedVisual)
+        {
+            InitializeCharacterVisual(prefab);
+        }
     }
 
     private void Update()
