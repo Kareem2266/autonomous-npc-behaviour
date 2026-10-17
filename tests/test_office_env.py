@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from autonomous_npc.envs.office_env import Action, OfficeEnv
+from autonomous_npc.envs.office_env import Action, AgentConfig, OfficeEnv
 
 # Running tests using: python -m pytest -v
 
@@ -360,6 +360,81 @@ def test_reset_chooses_a_valid_route_and_keeps_obstacles_off_stations_and_approa
     )
     assert obstacle_cells.isdisjoint(stations | approach_cells)
     assert tuple(observation["agent"]) not in stations | approach_cells
+
+
+def test_multi_agent_reset_assigns_each_agent_a_distinct_reserved_desk():
+    environment = OfficeEnv(
+        size=10,
+        agent_configs=(
+            AgentConfig("worker_1", ("printer",)),
+            AgentConfig("worker_2", ("coffee",)),
+        ),
+    )
+
+    environment.reset(seed=42)
+
+    desks = [
+        environment._desk_locations[agent.desk_name]
+        for agent in environment._agent_states
+    ]
+    desk_cells = {tuple(desk) for desk in desks}
+    desk_approaches = {
+        tuple(environment._station_approach_locations[tuple(desk)])
+        for desk in desks
+    }
+    obstacle_cells = {
+        tuple(obstacle) for obstacle in environment._obstacle_locations
+    }
+
+    assert len(environment._agent_states) == 2
+    assert len(desk_cells) == 2
+    assert desk_cells.isdisjoint(desk_approaches)
+    assert obstacle_cells.isdisjoint(desk_cells | desk_approaches)
+
+    for agent in environment._agent_states:
+        assigned_desk = environment._desk_locations[agent.desk_name]
+        np.testing.assert_array_equal(agent.current_station_location, assigned_desk)
+        np.testing.assert_array_equal(agent.task_route[-1], assigned_desk)
+
+
+def test_agent_cannot_be_configured_to_return_to_another_agents_desk():
+    with pytest.raises(ValueError, match="only use its assigned desk"):
+        OfficeEnv(
+            size=10,
+            agent_configs=(
+                AgentConfig("worker_1", ("desk_2",)),
+                AgentConfig("worker_2", ("printer",)),
+            ),
+        )
+
+
+def test_multi_agent_completion_info_reports_each_agents_status():
+    environment = OfficeEnv(
+        size=10,
+        agent_configs=(
+            AgentConfig("worker_1", ("printer",)),
+            AgentConfig("worker_2", ("coffee",)),
+        ),
+    )
+    environment.reset(seed=42)
+
+    first_agent = environment._agent_states[0]
+    first_desk = environment._desk_locations[first_agent.desk_name]
+    first_desk_approach = environment._approach_for_station(first_desk)
+    first_agent.location = first_desk_approach.copy()
+    first_agent.target_location = first_desk_approach.copy()
+    first_agent.current_station_location = first_desk.copy()
+    first_agent.task_route = [first_desk.copy()]
+    first_agent.route_index = 0
+    first_agent.carrying_document = True
+
+    _, _, terminated, _, info = environment.step(Action.INTERACT, agent_index=0)
+
+    assert terminated is False
+    assert info["agents_finished"] == {
+        "worker_1": True,
+        "worker_2": False,
+    }
 
 
 def test_rgb_array_render_uses_xy_coordinates_and_returns_height_width_channels():
