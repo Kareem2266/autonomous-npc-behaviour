@@ -15,6 +15,8 @@ At each tick, the policy receives one joint observation containing both workers�
 
 The reward encourages progress toward each worker’s current target, penalizes collisions and unnecessary backtracking, and rewards task completion. A shared policy is used for both workers, so it learns the same navigation behavior while conditioning on each worker’s position and task state.
 
+Project status: In progress. The environment, PPO training setup, and Unity demo are still being developed, so features and instructions may change.
+
 ## Project structure
 
 - `src/autonomous_npc/envs/office_env.py`: grid layout, station interactions, rewards, action masks, and simultaneous movement/collision rules.
