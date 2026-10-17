@@ -3,7 +3,13 @@ __pycache__/
 *.py[cod]
 .DS_Store
 PROJECT_HANDOFF.md
-models/
+/*.zip
+/models/
+
+# Local environment files; keep the example template shareable
+.env
+.env.*
+!.env.example
 
 # Unity-generated files
 [Ll]ibrary/
