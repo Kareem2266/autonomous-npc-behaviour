@@ -498,6 +498,7 @@ class OfficeEnv(gym.Env):
         agent_index=None,
         allow_detours=False,
         allow_occupied_cells=False,
+        allow_blocked_route_detours=False,
     ):
         if agent_index is not None:
             self._select_agent(agent_index)
@@ -509,14 +510,16 @@ class OfficeEnv(gym.Env):
             mask[Action.WAIT] = True
             return mask
 
-        other_agent_cells = set()
-        if not allow_occupied_cells:
-            other_agent_cells = {
-                tuple(agent_state.location)
-                for index, agent_state in enumerate(self._agent_states)
-                if index != self._active_agent_index
-                and np.all(agent_state.location >= 0)
-            }
+        other_agent_cells = {
+            tuple(agent_state.location)
+            for index, agent_state in enumerate(self._agent_states)
+            if index != self._active_agent_index
+            and np.all(agent_state.location >= 0)
+        }
+
+        static_moves = []
+        unoccupied_progress_moves = []
+        current_distance = self._get_path_distance()
 
         for action, direction in self._action_to_direction.items():
             next_location = self._agent_location + direction
@@ -526,7 +529,8 @@ class OfficeEnv(gym.Env):
                 for obstacle in self._obstacle_locations
             )
             hits_station = tuple(next_location) in self._station_approach_locations
-            hits_agent = tuple(next_location) in other_agent_cells
+            next_cell = tuple(next_location)
+            hits_agent = next_cell in other_agent_cells
             if (
                 outside_grid
                 or hits_obstacle
@@ -534,11 +538,33 @@ class OfficeEnv(gym.Env):
                 or (hits_agent and not allow_occupied_cells)
             ):
                 mask[action] = False
-            elif not allow_detours:
-                current_distance = self._get_path_distance()
+            else:
+                static_moves.append((action, next_location))
                 next_distance = self._get_path_distance(next_location)
-                if next_distance >= current_distance:
+                if next_distance < current_distance:
+                    if not hits_agent:
+                        unoccupied_progress_moves.append(
+                            (action, next_location, next_distance)
+                        )
+                elif not allow_detours:
                     mask[action] = False
+
+        if allow_blocked_route_detours and not unoccupied_progress_moves:
+            # Keep target-reducing moves (including a possible swap) available.
+            # If another worker blocks every unoccupied progress move, also
+            # allow only the safest non-occupied detour(s), by path distance.
+            detours = [
+                (action, location, self._get_path_distance(location))
+                for action, location in static_moves
+                if tuple(location) not in other_agent_cells
+                and not np.array_equal(location, self._previous_agent_location)
+                and self._get_path_distance(location) >= current_distance
+            ]
+            if detours:
+                best_detour_distance = min(item[2] for item in detours)
+                for action, _, distance in detours:
+                    if distance == best_detour_distance:
+                        mask[action] = True
 
         at_target = np.array_equal(self._agent_location, self._target_location)
         if at_target:
@@ -592,8 +618,9 @@ class OfficeEnv(gym.Env):
             old_distances.append(self._get_path_distance())
             action_masks.append(
                 self.action_masks(
-                    allow_detours=True,
+                    allow_detours=False,
                     allow_occupied_cells=True,
+                    allow_blocked_route_detours=True,
                 )
             )
 
@@ -636,10 +663,24 @@ class OfficeEnv(gym.Env):
                     ).append(agent_index)
             for colliding_agents in destination_agents.values():
                 if len(colliding_agents) > 1:
+                    # Let the worker that gets closest to its own target take
+                    # the cell; the others wait this tick and can follow after
+                    # it clears the route. Index is a stable tie-breaker.
+                    next_distances = {}
                     for agent_index in colliding_agents:
-                        proposed_locations[agent_index] = old_locations[agent_index]
-                        hit_obstacles[agent_index] = True
-                        changed = True
+                        self._active_agent_index = agent_index
+                        next_distances[agent_index] = self._get_path_distance(
+                            proposed_locations[agent_index]
+                        )
+                    winner = min(
+                        colliding_agents,
+                        key=lambda index: (next_distances[index], index),
+                    )
+                    for agent_index in colliding_agents:
+                        if agent_index != winner:
+                            proposed_locations[agent_index] = old_locations[agent_index]
+                            hit_obstacles[agent_index] = True
+                            changed = True
 
             for agent_index, proposed_location in enumerate(proposed_locations):
                 if np.array_equal(old_locations[agent_index], proposed_location):
@@ -705,9 +746,7 @@ class OfficeEnv(gym.Env):
             self._active_agent_index = agent_index
             new_distance = self._get_path_distance()
             difference = old_distances[agent_index] - new_distance
-            # A temporary detour should not be punished as strongly as waiting;
-            # the step cost and collision penalty still discourage aimless moves.
-            reward = 0.1 * max(0.0, difference) - 0.01
+            reward = 0.1 * difference - 0.01
             if (
                 not np.array_equal(old_locations[agent_index], agent.location)
                 and np.array_equal(
